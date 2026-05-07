@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Frontend build output
+frontend/dist/
+dist/
+build/
+
+# Backend build output
+backend/target/
+target/
+
+# Logs and runtime files
+logs/
+backend/logs/
+*.log
+
+# Local uploads/runtime data
+uploads/
+backend/uploads/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE/editor files
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db

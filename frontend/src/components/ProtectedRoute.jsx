@@ -1,0 +1,39 @@
+import React from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext'; // Adjust path as needed
+import Sidebar from './Sidebar';
+import Header from './Header';
+
+export default function ProtectedRoute() {
+    const { isAuthenticated, loading } = useAuth();
+
+    // Show loading while checking auth
+    if (loading) {
+        console.log("ProtectedRoute - Still checking authentication...");
+        return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                <div className="spinner-border" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        );
+    }
+
+    // If not authenticated, redirect to login
+    if (!isAuthenticated) {
+        console.warn("ProtectedRoute - Not authenticated, redirecting to /sign-in");
+        return <Navigate to="/sign-in" replace />;
+    }
+
+    // If authenticated, render the nested routes
+    console.log("ProtectedRoute - Authenticated, rendering protected content");
+    return (
+    <div className="codex-main">
+        <Sidebar />
+        <Header />
+        <div className="codex-content">
+            <Outlet />
+        </div>
+    </div>
+);
+}
