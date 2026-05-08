@@ -44,6 +44,18 @@ export default function Profile() {
                 <div className="theme-body">
                     <Container fluid>
                         <Row>
+                            <Col xs={12} className="mb-4">
+                                <Card className="overflow-hidden">
+                                    <CardBody className="p-0">
+                                        <img
+                                            src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1200&q=80"
+                                            alt="People training in a gym"
+                                            className="img-fluid w-100"
+                                            style={{ aspectRatio: "16 / 6", objectFit: "cover" }}
+                                        />
+                                    </CardBody>
+                                </Card>
+                            </Col>
                             <Col xxl={4} md={6}>
                                 <Card>
                                     <CardBody>

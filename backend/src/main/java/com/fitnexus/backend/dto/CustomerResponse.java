@@ -12,6 +12,11 @@ public class CustomerResponse {
     private String email;
     private String firstName;
     private String lastName;
+    private Long headOfficeId;
+    private Long branchId;
+    private Long departmentId;
+    private Long teamId;
+    private Long designationId;
     private Double weight;
     private Double height;
     private String bloodGroup;
@@ -25,5 +30,8 @@ public class CustomerResponse {
     private String emergencyPhone;
     private Boolean isActive;
     private Boolean isApproved;
+    private Long assignedTrainerId;
     private String assignedTrainerName;
+    private Long trainerId;
+    private Long createdById;
 }

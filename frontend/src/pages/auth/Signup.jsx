@@ -2,10 +2,7 @@ import React, { useState } from 'react'
 import { Link } from "react-router-dom";
 import { Container, Form, Row, Col, InputGroup, Alert } from 'react-bootstrap';
 import logo from "/src/assets/images/logo/logo.png";
-import welcomeimg from "/src/assets/images/welcome.png";
-import google from "/src/assets/images/icon/icon-google.png";
-import facebook from "/src/assets/images/icon/icon-facebook.png";
-import apple from "/src/assets/images/icon/icon-apple.png";
+import welcomeimg from "/src/assets/images/auth/no-pain-no-gain-2048x2048-17407.png";
 import InputGroupText from 'react-bootstrap/esm/InputGroupText';
 import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import { useNavigate } from "react-router-dom";
@@ -249,29 +246,6 @@ export default function Signup() {
                                         </Col>
                                     </Row>
                                 </Form>
-                                <div className="login-aur text-center py-4">
-                                    <span className="bg-white">Or</span>
-                                </div>
-                                <ul className="login-with">
-                                    <li>
-                                        <Link to="#" onClick={(e) => e.preventDefault()} className="btn btn-light d-block">
-                                            <img src={google} alt="" />
-                                            Sign up with Google
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link to="#" onClick={(e) => e.preventDefault()} className="btn btn-light d-block">
-                                            <img src={apple} alt="" />
-                                            Sign up with Apple
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link to="#" onClick={(e) => e.preventDefault()} className="btn btn-light d-block">
-                                            <img src={facebook} alt="" />
-                                            Sign up with Facebook
-                                        </Link>
-                                    </li>
-                                </ul>
                                 <div className="text-center mt-4">
                                     Already have an account?
                                     <Link to="/sign-in" className="text-primary ms-2">Sign In</Link>

@@ -27,6 +27,7 @@ public class UserManagementServiceImplementation implements UserManagementServic
     private final AdminRepository adminRepository;
     private final ManagerRepository managerRepository;
     private final TrainerRepository trainerRepository;
+    private final TeamRepository teamRepository;
     private final FitnessUserRepository fitnessUserRepository;
     private final DietPlanRepository dietPlanRepository;
     private final WorkoutPlanRepository workoutPlanRepository;
@@ -432,10 +433,25 @@ public class UserManagementServiceImplementation implements UserManagementServic
         customer.setFirstName(request.getFirstName());
         customer.setLastName(normalizeOptional(request.getLastName()));
         copyCustomerFields(customer, request);
-        if (creator.getRole() == Role.TRAINER) {
-            customer.setAssignedTrainer(trainerRepository.findById(trainerId)
-                    .orElseThrow(() -> new RuntimeException("Trainer not found")));
+        applyOrgFields(customer.getAccount(),
+                creator.getHeadOfficeId(),
+                creator.getBranchId(),
+                creator.getDepartmentId(),
+                creator.getTeamId(),
+                creator.getDesignationId());
+        Long assignedTrainerAccountId = request.getAssignedTrainerId();
+        if (assignedTrainerAccountId == null) {
+            throw new RuntimeException("Assigned trainer is required");
         }
+        Users trainerAccount = getAccount(assignedTrainerAccountId, "Trainer");
+        if (trainerAccount.getRole() != Role.TRAINER) {
+            throw new RuntimeException("Selected user is not a trainer");
+        }
+        Trainer trainer = trainerRepository.findByAccount_Id(assignedTrainerAccountId)
+                .orElseThrow(() -> new RuntimeException("Trainer profile not found"));
+        customer.setAssignedTrainer(trainer);
+        customer.getAccount().setTrainer(trainerAccount);
+        customer.getAccount().setManager(trainerAccount.getManager());
         customer.setDetailsCompleted(true);
         return mapCustomerToResponse(fitnessUserRepository.save(customer));
     }
@@ -451,7 +467,36 @@ public class UserManagementServiceImplementation implements UserManagementServic
         }
         FitnessUser customer = fitnessUserRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Customer not found"));
+        Users account = customer.getAccount();
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            account.setEmail(request.getEmail().trim());
+        }
+        String updatedName = buildDisplayName(
+                request.getFirstName() != null ? request.getFirstName() : customer.getFirstName(),
+                request.getLastName() != null ? request.getLastName() : customer.getLastName()
+        );
+        account.setName(updatedName);
+        applyOrgFields(account, request.getHeadOfficeId(), request.getBranchId(), request.getDepartmentId(), request.getTeamId(), request.getDesignationId());
+        Long assignedTrainerAccountId = request.getAssignedTrainerId();
+        if (assignedTrainerAccountId == null) {
+            throw new RuntimeException("Assigned trainer is required");
+        }
+        Users trainerAccount = getAccount(assignedTrainerAccountId, "Trainer");
+        if (trainerAccount.getRole() != Role.TRAINER) {
+            throw new RuntimeException("Selected user is not a trainer");
+        }
+        Trainer trainer = trainerRepository.findByAccount_Id(assignedTrainerAccountId)
+                .orElseThrow(() -> new RuntimeException("Trainer profile not found"));
+        customer.setAssignedTrainer(trainer);
+        account.setTrainer(trainerAccount);
+        account.setManager(trainerAccount.getManager());
         copyCustomerFields(customer, request);
+        if (request.getFirstName() != null && !request.getFirstName().isBlank()) {
+            customer.setFirstName(request.getFirstName().trim());
+        }
+        if (request.getLastName() != null) {
+            customer.setLastName(normalizeOptional(request.getLastName()));
+        }
         customer.setDetailsCompleted(true);
         return mapCustomerToResponse(fitnessUserRepository.save(customer));
     }
@@ -480,16 +525,20 @@ public class UserManagementServiceImplementation implements UserManagementServic
 
      @Override
      public List<CustomerResponse> getCustomersAssignedToTrainer(Long trainerId) {
-         Users requester = getRequesterOrThrow(trainerId);
-         if (requester.getRole() != Role.TRAINER) {
-             throw new SecurityException("You do not have permission to view these users");
+         Users requester = getAuthenticatedAccount();
+         if (requester.getRole() == Role.TRAINER && !requester.getId().equals(trainerId)) {
+             throw new SecurityException("Trainers can only view their own customers");
+         }
+         Users trainerAccount = getAccount(trainerId, "Trainer");
+         if (trainerAccount.getRole() != Role.TRAINER) {
+             throw new SecurityException("Selected user is not a trainer");
          }
 
          return java.util.stream.Stream.concat(
-                         fitnessUserRepository.findByAssignedTrainer_Id(requester.getId()).stream(),
+                         fitnessUserRepository.findByAssignedTrainer_Account_Id(trainerId).stream(),
                          java.util.stream.Stream.concat(
-                                 fitnessUserRepository.findByAccount_Trainer_Id(requester.getId()).stream(),
-                                 fitnessUserRepository.findByAccount_CreatedBy_Id(requester.getId()).stream()
+                                 fitnessUserRepository.findByAccount_Trainer_Id(trainerId).stream(),
+                                 fitnessUserRepository.findByAccount_CreatedBy_Id(trainerId).stream()
                          )
                  )
                  .collect(java.util.stream.Collectors.toMap(
@@ -611,11 +660,11 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 return fitnessUserRepository.findByAccount_Manager_Id(requester.getId());
             case TRAINER:
                 return java.util.stream.Stream.concat(
-                                fitnessUserRepository.findByAssignedTrainer_Id(requester.getId()).stream(),
-                                java.util.stream.Stream.concat(
-                                        fitnessUserRepository.findByAccount_Trainer_Id(requester.getId()).stream(),
-                                        fitnessUserRepository.findByAccount_CreatedBy_Id(requester.getId()).stream()
-                                )
+                    fitnessUserRepository.findByAssignedTrainer_Account_Id(requester.getId()).stream(),
+                    java.util.stream.Stream.concat(
+                            fitnessUserRepository.findByAccount_Trainer_Id(requester.getId()).stream(),
+                            fitnessUserRepository.findByAccount_CreatedBy_Id(requester.getId()).stream()
+                    )
                         )
                         .collect(java.util.stream.Collectors.toMap(
                                 user -> user.getId(),
@@ -1188,6 +1237,11 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 account.getEmail(),
                 customer.getFirstName(),
                 customer.getLastName(),
+                account.getHeadOfficeId(),
+                account.getBranchId(),
+                account.getDepartmentId(),
+                account.getTeamId(),
+                account.getDesignationId(),
                 customer.getWeight(),
                 customer.getHeight(),
                 customer.getBloodGroup(),
@@ -1201,7 +1255,10 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 customer.getEmergencyPhone(),
                 account.getIsActive(),
                 account.getIsApproved(),
-                customer.getAssignedTrainer() != null ? customer.getAssignedTrainer().getAccount().getName() : null
+                customer.getAssignedTrainer() != null ? customer.getAssignedTrainer().getAccount().getId() : null,
+                customer.getAssignedTrainer() != null ? customer.getAssignedTrainer().getAccount().getName() : null,
+                account.getTrainer() != null ? account.getTrainer().getId() : null,
+                account.getCreatedBy() != null ? account.getCreatedBy().getId() : null
         );
     }
 }

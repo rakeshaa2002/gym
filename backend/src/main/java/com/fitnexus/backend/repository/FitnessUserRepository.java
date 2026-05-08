@@ -32,6 +32,9 @@ public interface FitnessUserRepository extends JpaRepository<FitnessUser, Long> 
     List<FitnessUser> findByAssignedTrainer_Id(Long trainerId);
 
     @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
+    List<FitnessUser> findByAssignedTrainer_Account_Id(Long trainerAccountId);
+
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
     List<FitnessUser> findByAccount_CreatedBy_Id(Long createdById);
 
     List<FitnessUser> findByAccount_IsActive(Boolean isActive);
@@ -41,4 +44,6 @@ public interface FitnessUserRepository extends JpaRepository<FitnessUser, Long> 
     long countByAccount_IsActive(Boolean isActive);
 
     long countByAssignedTrainer_Id(Long trainerId);
+
+    long countByAssignedTrainer_Account_Id(Long trainerAccountId);
 }

@@ -11,7 +11,7 @@ import { useAuth } from "../../context/AuthContext";
 import WizardPopup from "../../components/WizardPopup";
 import { extractApiErrorMessage } from "../../utils/errorMessage";
 import { getWorkoutPlans, getWorkoutTypes } from "../../api/workoutApi";
-import { getVisibleTrainers, getVisibleWorkoutUsers } from "../../api/scheduleApi";
+import { getCustomersAssignedToTrainer, getVisibleTrainers } from "../../api/scheduleApi";
 import {
   createUserWorkoutSchedule,
   deleteUserWorkoutSchedule,
@@ -88,17 +88,15 @@ export default function UserWorkoutSchedule() {
     setLoading(true);
     setError("");
     try {
-      const [scheduleRows, trainerRows, userRows, planRows, typeRows] = await Promise.all([
+      const [scheduleRows, trainerRows, planRows, typeRows] = await Promise.all([
         getUserWorkoutSchedules(),
         user?.userId ? getVisibleTrainers(user.userId) : Promise.resolve([]),
-        user?.userId ? getVisibleWorkoutUsers(user.userId, user.role) : Promise.resolve([]),
         getWorkoutPlans(),
         getWorkoutTypes(),
       ]);
 
       setRows((Array.isArray(scheduleRows) ? scheduleRows : []).map(normalizeUserWorkoutSchedule).filter(Boolean));
       setTrainers(Array.isArray(trainerRows) ? trainerRows : []);
-      setUsers(Array.isArray(userRows) ? userRows : []);
       setWorkoutPlans(Array.isArray(planRows) ? planRows : []);
       setWorkoutTypes(Array.isArray(typeRows) ? typeRows : []);
     } catch (err) {
@@ -113,6 +111,35 @@ export default function UserWorkoutSchedule() {
     if (!canView) return;
     loadData();
   }, [canView]);
+
+  useEffect(() => {
+    if (!canView) return;
+
+    const selectedTrainerId = user?.role === "TRAINER" ? user?.userId : form.trainerId;
+    if (!selectedTrainerId) {
+      setUsers([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadUsers = async () => {
+      try {
+        const userRows = await getCustomersAssignedToTrainer(selectedTrainerId);
+        if (!cancelled) {
+          setUsers(Array.isArray(userRows) ? userRows : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setUsers([]);
+        }
+      }
+    };
+
+    loadUsers();
+    return () => {
+      cancelled = true;
+    };
+  }, [canView, form.trainerId, user?.role, user?.userId]);
 
   useEffect(() => {
     if (!notice) return;
@@ -203,6 +230,7 @@ export default function UserWorkoutSchedule() {
   };
 
   const validate = () => {
+    if (user?.role !== "TRAINER" && !form.trainerId) return "Trainer is required";
     if (!form.userId) return "User is required";
     if (!form.workoutPlanId) return "Workout plan is required";
     if (!form.title.trim()) return "Title is required";
@@ -417,7 +445,11 @@ export default function UserWorkoutSchedule() {
               {user?.role === "TRAINER" ? (
                 <input className="form-control" value={user?.name || "Current trainer"} disabled />
               ) : (
-                <select className="form-select" value={form.trainerId} onChange={(e) => setForm((prev) => ({ ...prev, trainerId: e.target.value }))}>
+                <select
+                  className="form-select"
+                  value={form.trainerId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, trainerId: e.target.value, userId: "" }))}
+                >
                   <option value="">Select trainer</option>
                   {trainerOptions.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.label}</option>)}
                 </select>
@@ -425,7 +457,12 @@ export default function UserWorkoutSchedule() {
             </div>
             <div className="col-md-6">
               <label className="form-label">User</label>
-              <select className="form-select" value={form.userId} onChange={(e) => setForm((prev) => ({ ...prev, userId: e.target.value }))}>
+              <select
+                className="form-select"
+                value={form.userId}
+                onChange={(e) => setForm((prev) => ({ ...prev, userId: e.target.value }))}
+                disabled={user?.role !== "TRAINER" && !form.trainerId}
+              >
                 <option value="">Select user</option>
                 {userOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>

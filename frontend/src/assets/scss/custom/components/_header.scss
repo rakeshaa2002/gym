@@ -18,7 +18,20 @@
     }
     .input-group{
         width: 450px;
-    }   
+    }
+    .header-left-profile{
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        overflow: hidden;
+        flex: 0 0 38px;
+        img{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+    }
     .notiicon-iconwrap{
         i{
             animation: swing 2s ease-in-out infinite;

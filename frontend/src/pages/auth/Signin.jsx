@@ -6,10 +6,7 @@ import api from "../../utils/api";
 import { useAuth } from '../../context/AuthContext'; // Adjust path as needed
 
 import logo from "/src/assets/images/logo/logo.png";
-import welcomeimg from "/src/assets/images/welcome.png";
-import google from "/src/assets/images/icon/icon-google.png";
-import facebook from "/src/assets/images/icon/icon-facebook.png";
-import apple from "/src/assets/images/icon/icon-apple.png";
+import loginImage from "/src/assets/images/auth/no-pain-no-gain-2048x2048-17407.png";
 import InputGroupText from 'react-bootstrap/esm/InputGroupText';
 import { IconEye, IconEyeOff } from '@tabler/icons-react';
 
@@ -177,30 +174,6 @@ export default function Signin() {
                                         </Col>
                                     </Row>
                                 </Form>
-
-                                <div className="login-aur text-center py-4">
-                                    <span className="bg-white">Or</span>
-                                </div>
-                                <ul className="login-with">
-                                    <li>
-                                        <Link to="#" onClick={(e) => e.preventDefault()} className="btn btn-light d-block">
-                                            <img src={google} alt="" />
-                                            Sign in with Google
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link to="#" onClick={(e) => e.preventDefault()} className="btn btn-light d-block">
-                                            <img src={apple} alt="" />
-                                            Sign in with Apple
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link to="#" onClick={(e) => e.preventDefault()} className="btn btn-light d-block">
-                                            <img src={facebook} alt="" />
-                                            Sign in with Facebook
-                                        </Link>
-                                    </li>
-                                </ul>
                                 <div className="text-center mt-4">
                                     Don't you have an account?
                                     <Link to="/sign-up" className="text-primary ms-2">Sign Up</Link>
@@ -208,7 +181,7 @@ export default function Signin() {
                             </div>
                         </Col>
                         <Col lg={6} className="d-none d-lg-block">
-                            <img src={welcomeimg} alt="" className="img-fluid" />
+                            <img src={loginImage} alt="People training in a gym" className="img-fluid" />
                         </Col>
                     </Row>
                 </Container>

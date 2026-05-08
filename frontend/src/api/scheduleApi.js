@@ -17,6 +17,11 @@ export async function getVisibleWorkoutUsers(requesterId, role) {
   return unwrapList(response);
 }
 
+export async function getCustomersAssignedToTrainer(trainerId) {
+  const response = await api.get(`/users/customers/assigned-to/${trainerId}`);
+  return unwrapList(response);
+}
+
 export async function getTrainerDutySchedules() {
   const response = await api.get("/trainer-duty-schedules");
   return unwrapList(response);

@@ -72,6 +72,9 @@ export default function Header() {
                         <div className="sidebar-action navicon-wrap me-3 d-xl-none" onClick={toggleSidebar}>
                             <IconLayoutGrid/>
                         </div>
+                        <div className="header-left-profile me-3">
+                            <img src={adminimg} alt="Profile" className="img-fluid" />
+                        </div>
                         <div className="input-group">
                             <span className="input-group-text pe-0">                               
                                 <IconSearch/>

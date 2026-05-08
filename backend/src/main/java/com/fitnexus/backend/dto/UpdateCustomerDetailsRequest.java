@@ -9,6 +9,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UpdateCustomerDetailsRequest {
+    private String email;
+    private String firstName;
+    private String lastName;
+
     @NotNull(message = "Weight cannot be null")
     @DecimalMin(value = "20.0", message = "Weight must be at least 20 kg")
     @DecimalMax(value = "300.0", message = "Weight cannot exceed 300 kg")
@@ -54,4 +58,11 @@ public class UpdateCustomerDetailsRequest {
     @NotBlank(message = "Emergency phone cannot be blank")
     @Pattern(regexp = "^[+]?[0-9]{10,15}$", message = "Emergency phone should be valid (10-15 digits, optional + prefix)")
     private String emergencyPhone;
+
+    private Long headOfficeId;
+    private Long branchId;
+    private Long departmentId;
+    private Long teamId;
+    private Long designationId;
+    private Long assignedTrainerId;
 }

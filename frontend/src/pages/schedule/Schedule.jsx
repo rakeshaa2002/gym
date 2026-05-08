@@ -286,6 +286,19 @@ export default function Schedule() {
                                             </Col>
                                         </Row>
                                     </Col>
+
+                                    <Col xxl={12} md={6}>
+                                        <Card className="overflow-hidden">
+                                            <Card.Body className="p-0">
+                                                <img
+                                                    src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1200&q=80"
+                                                    alt="People training in a gym"
+                                                    className="img-fluid w-100"
+                                                    style={{ aspectRatio: "16 / 9", objectFit: "cover" }}
+                                                />
+                                            </Card.Body>
+                                        </Card>
+                                    </Col>
                                 </Row>
                             </Col>
                         </Row>

@@ -378,6 +378,7 @@ function createEmptyForm(role = "ADMIN") {
     workLocation: "",
     reportingManagerName: "",
     reportsToId: "",
+    assignedTrainerId: "",
     fatherName: "",
     motherName: "",
     maritalStatus: "",
@@ -560,6 +561,12 @@ function mapCustomerRow(item) {
     qualification: "",
     status: item?.isActive ? "ACTIVE" : "INACTIVE",
     createdByName: item?.assignedTrainerName || "",
+    headOfficeId: item?.headOfficeId ?? "",
+    branchId: item?.branchId ?? "",
+    departmentId: item?.departmentId ?? "",
+    teamId: item?.teamId ?? "",
+    designationId: item?.designationId ?? "",
+    assignedTrainerId: item?.assignedTrainerId ?? "",
     img: ROLE_AVATARS.USER,
     raw: item,
   };
@@ -1004,6 +1011,7 @@ export default function User() {
       return {
         ...prev,
         reportsToId: nextReportsToId,
+        assignedTrainerId: nextReportsToId,
         reportingManagerName: nextReportingManagerName,
       };
     });
@@ -1047,6 +1055,18 @@ export default function User() {
     const split = splitName(row?.name);
     const org = row?.raw || {};
     const orgVisibility = getOrganizationVisibility(row?.role);
+    const teamForEdit = orgVisibility.team && org?.teamId
+      ? teams.find((item) => String(item.id) === String(org.teamId)) || null
+      : null;
+    const resolvedTrainerForEdit = teamForEdit
+      ? getTrainerForTeam(teamForEdit, rows) || resolveTeamTrainerOption(teamForEdit, reportingOptions)
+      : null;
+    const resolvedTrainerId =
+      String(org?.assignedTrainerId || org?.reportsToId || resolvedTrainerForEdit?.option?.id || resolvedTrainerForEdit?.identity?.id || "").
+        trim();
+    const resolvedTrainerName =
+      String(org?.assignedTrainerName || org?.reportsToName || resolvedTrainerForEdit?.option?.name || resolvedTrainerForEdit?.identity?.name || "").
+        trim();
 
     setForm({
       ...createEmptyForm(row?.role || "ADMIN"),
@@ -1092,8 +1112,9 @@ export default function User() {
       pincode: org?.pincode || "",
       employmentType: org?.employmentType || "",
       workLocation: org?.workLocation || "",
-      reportingManagerName: org?.reportingManagerName || org?.reportsToName || "",
-      reportsToId: org?.reportsToId ? String(org.reportsToId) : "",
+      reportingManagerName: resolvedTrainerName || org?.reportingManagerName || "",
+      reportsToId: resolvedTrainerId,
+      assignedTrainerId: resolvedTrainerId,
       fatherName: org?.fatherName || "",
       motherName: org?.motherName || "",
       maritalStatus: org?.maritalStatus || "",
@@ -1464,6 +1485,7 @@ export default function User() {
           departmentId: shared.departmentId,
           teamId: shared.teamId,
           designationId: shared.designationId,
+          assignedTrainerId: toSafeId(selectedTeamTrainer?.option?.id || selectedTeamTrainer?.identity?.id || form.assignedTrainerId),
         },
       };
     }
@@ -1572,6 +1594,9 @@ export default function User() {
         endpoint: `/users/customer/${selectedRow.id}`,
         params: { updaterId: currentUserId },
         payload: {
+          email: shared.email,
+          firstName: shared.firstName,
+          lastName: shared.lastName,
           weight: Number(form.weight) || 0,
           height: Number(form.height) || 0,
           bloodGroup: form.bloodGroup || "O+",
@@ -1583,6 +1608,12 @@ export default function User() {
           medicalConditions: form.medicalConditions.trim() || null,
           emergencyContact: form.emergencyContact.trim() || "",
           emergencyPhone: form.emergencyPhone.trim() || "",
+          headOfficeId: shared.headOfficeId,
+          branchId: shared.branchId,
+          departmentId: shared.departmentId,
+          teamId: shared.teamId,
+          designationId: shared.designationId,
+          assignedTrainerId: toSafeId(selectedTeamTrainer?.option?.id || selectedTeamTrainer?.identity?.id || form.assignedTrainerId),
         },
       };
     }
@@ -1645,6 +1676,9 @@ export default function User() {
     }
 
     if (role === "USER") {
+      if (!selectedTeamTrainer?.identity?.id && !selectedTeamTrainer?.option?.id && !form.assignedTrainerId) {
+        return "Team trainer is required for User";
+      }
       if (!String(form.weight).trim()) return "Weight is required for User";
       if (!String(form.height).trim()) return "Height is required for User";
       if (!form.bloodGroup.trim()) return "Blood group is required for User";
@@ -2553,12 +2587,15 @@ export default function User() {
               }
 
               const resolved = getTrainerForTeam(nextTeam, rows) || resolveTeamTrainerOption(nextTeam, reportingOptions);
+              const resolvedTrainerId = resolved?.option ? String(resolved.option.id) : String(resolved?.identity?.id || "");
+              const resolvedTrainerName = resolved?.option?.name || resolved?.identity?.name || "";
 
               setForm((prev) => ({
                 ...prev,
                 teamId: nextTeamId,
-                reportsToId: resolved?.option ? String(resolved.option.id) : String(resolved?.identity?.id || ""),
-                reportingManagerName: resolved?.option?.name || resolved?.identity?.name || "",
+                reportsToId: resolvedTrainerId,
+                assignedTrainerId: resolvedTrainerId || prev.assignedTrainerId,
+                reportingManagerName: resolvedTrainerName,
               }));
             }}
           >
@@ -2575,14 +2612,14 @@ export default function User() {
       {isCustomerForm && getOrganizationVisibility(form.role).team && (
         <div className="col-md-6">
           <label className="form-label">Team Trainer</label>
-          <div className="form-control bg-light">
-            {selectedTeamTrainerName}
-          </div>
-          <small className="text-muted d-block mt-1">
-            {selectedTeamTrainer.option
-              ? "Reports To will be set to this trainer."
-              : "This comes from the team lead saved on the team."}
-          </small>
+          <select className="form-select bg-light" value={form.assignedTrainerId || selectedTeamTrainer?.identity?.id || ""} disabled>
+            <option value="">
+              {selectedTeamTrainerName || "No trainer assigned to this team"}
+            </option>
+            {selectedTeamTrainer?.identity?.id ? (
+              <option value={selectedTeamTrainer.identity.id}>{selectedTeamTrainerName}</option>
+            ) : null}
+          </select>
         </div>
       )}
 

@@ -74,6 +74,9 @@ public class CreateCustomerByTrainerRequest {
     @NotBlank(message = "Emergency phone cannot be blank")
     @Pattern(regexp = "^[+]?[0-9]{10,15}$", message = "Emergency phone should be valid (10-15 digits, optional + prefix)")
     private String emergencyPhone;
+
+    private Long teamId;
+    private Long assignedTrainerId;
 }
 
 
