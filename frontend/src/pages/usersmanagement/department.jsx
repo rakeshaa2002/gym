@@ -26,7 +26,7 @@ const DEPARTMENT_STEPS = [
 ];
 
 export default function DepartmentPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const currentRole = String(currentUser?.role || "").toUpperCase();
 
   const [rows, setRows] = useState([]);
@@ -92,10 +92,10 @@ export default function DepartmentPage() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  if (!["SUPER_ADMIN", "ADMIN"].includes(currentRole)) {
+  if (!hasPermission("departments")) {
     return (
       <div className="content">
-        <div className="alert alert-danger">Only Super Admin and Admin can manage Departments</div>
+        <div className="alert alert-danger">You do not have permission to manage Departments</div>
       </div>
     );
   }

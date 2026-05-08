@@ -28,7 +28,9 @@ import java.util.UUID;
 public class FileUploadController {
     private static final long MAX_FILE_SIZE = 10L * 1024L * 1024L;
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "jpg", "jpeg", "png", "webp");
+    private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
     private static final Path UPLOAD_ROOT = Paths.get(System.getProperty("user.dir"), "uploads", "employee-documents");
+    private static final Path DIET_IMAGE_UPLOAD_ROOT = Paths.get(System.getProperty("user.dir"), "uploads", "diet-images");
 
     @PostMapping("/employee-documents")
     public ResponseEntity<?> uploadEmployeeDocument(@RequestParam("file") MultipartFile file) {
@@ -76,12 +78,62 @@ public class FileUploadController {
         }
     }
 
+    @PostMapping("/diet-images")
+    public ResponseEntity<?> uploadDietImage(@RequestParam("file") MultipartFile file) {
+        try {
+            if (file == null || file.isEmpty()) {
+                return badRequest("Please choose an image to upload", "/api/uploads/diet-images");
+            }
+            if (file.getSize() > MAX_FILE_SIZE) {
+                return badRequest("Image size must be 10 MB or less", "/api/uploads/diet-images");
+            }
+
+            String originalName = file.getOriginalFilename() == null ? "image" : file.getOriginalFilename();
+            String extension = getExtension(originalName);
+            if (!ALLOWED_IMAGE_EXTENSIONS.contains(extension)) {
+                return badRequest("Only JPG, JPEG, PNG and WEBP images are allowed", "/api/uploads/diet-images");
+            }
+
+            Files.createDirectories(DIET_IMAGE_UPLOAD_ROOT);
+            String fileName = UUID.randomUUID() + "." + extension;
+            Path target = DIET_IMAGE_UPLOAD_ROOT.resolve(fileName).normalize();
+            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+
+            FileUploadResponse response = new FileUploadResponse(
+                    fileName,
+                    originalName,
+                    "/uploads/diet-images/" + fileName,
+                    file.getContentType(),
+                    file.getSize()
+            );
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(new ApiSuccessResponse<>(
+                    HttpStatus.CREATED.value(),
+                    "Image uploaded successfully",
+                    response,
+                    LocalDateTime.now().toString()
+            ));
+        } catch (IOException e) {
+            log.error("Failed to upload diet image", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiErrorResponse(
+                    HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                    "Could not store uploaded image",
+                    LocalDateTime.now().toString(),
+                    "/api/uploads/diet-images"
+            ));
+        }
+    }
+
     private ResponseEntity<ApiErrorResponse> badRequest(String message) {
+        return badRequest(message, "/api/uploads/employee-documents");
+    }
+
+    private ResponseEntity<ApiErrorResponse> badRequest(String message, String path) {
         return ResponseEntity.badRequest().body(new ApiErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
                 message,
                 LocalDateTime.now().toString(),
-                "/api/uploads/employee-documents"
+                path
         ));
     }
 

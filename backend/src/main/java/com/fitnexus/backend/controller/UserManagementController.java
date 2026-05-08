@@ -749,6 +749,114 @@ public class UserManagementController {
                             java.time.LocalDateTime.now().toString(), "/api/users/customer/" + customerId + "/activate"));
         }
     }
+
+    @PutMapping("/{userId}/assign-diet/{dietPlanId}")
+    public ResponseEntity<?> assignDietPlan(@PathVariable Long userId, @PathVariable Long dietPlanId) {
+        try {
+            var response = userManagementServiceImplementation.assignDietPlanToUser(userId, dietPlanId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Diet plan assigned successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized diet plan assignment: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/assign-diet/" + dietPlanId));
+        } catch (com.fitnexus.backend.exception.InvalidOperationException e) {
+            log.warn("Invalid diet plan assignment: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiErrorResponse(HttpStatus.NOT_FOUND.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/assign-diet/" + dietPlanId));
+        } catch (Exception e) {
+            log.error("Error assigning diet plan: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error assigning diet plan: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/assign-diet/" + dietPlanId));
+        }
+    }
+
+    @GetMapping("/me/diet-plan")
+    public ResponseEntity<?> getMyDietPlan() {
+        try {
+            var response = userManagementServiceImplementation.getMyDietPlan();
+            if (response == null) {
+                return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                        "No diet plan has been assigned to you yet.",
+                        null,
+                        java.time.LocalDateTime.now().toString()));
+            }
+
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Diet plan retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to my diet plan: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/diet-plan"));
+        } catch (Exception e) {
+            log.error("Error retrieving my diet plan: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving diet plan: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/diet-plan"));
+        }
+    }
+
+    @PutMapping("/{userId}/assign-workout/{workoutPlanId}")
+    public ResponseEntity<?> assignWorkoutPlan(@PathVariable Long userId, @PathVariable Long workoutPlanId) {
+        try {
+            var response = userManagementServiceImplementation.assignWorkoutPlanToUser(userId, workoutPlanId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Workout plan assigned successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized workout plan assignment: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/assign-workout/" + workoutPlanId));
+        } catch (com.fitnexus.backend.exception.InvalidOperationException e) {
+            log.warn("Invalid workout plan assignment: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiErrorResponse(HttpStatus.NOT_FOUND.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/assign-workout/" + workoutPlanId));
+        } catch (Exception e) {
+            log.error("Error assigning workout plan: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error assigning workout plan: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/assign-workout/" + workoutPlanId));
+        }
+    }
+
+    @GetMapping("/me/workout-plan")
+    public ResponseEntity<?> getMyWorkoutPlan() {
+        try {
+            var response = userManagementServiceImplementation.getMyWorkoutPlan();
+            if (response == null) {
+                return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                        "No workout plan has been assigned to you yet.",
+                        null,
+                        java.time.LocalDateTime.now().toString()));
+            }
+
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Workout plan retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to my workout plan: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/workout-plan"));
+        } catch (Exception e) {
+            log.error("Error retrieving my workout plan: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving workout plan: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/workout-plan"));
+        }
+    }
     @GetMapping("/reporting-options")
     public ResponseEntity<?> getReportingOptions(@RequestParam Role role,
                                                  @RequestParam(required = false) Long branchId,

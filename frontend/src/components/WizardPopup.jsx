@@ -21,7 +21,7 @@ const WizardPopup = ({
   const isLast = step === steps.length - 1;
 
   return (
-    <div className="avm-backdrop" onClick={onClose} role="presentation">
+    <div className="avm-backdrop" role="presentation">
       <div
         className="avm-modal"
         style={modalWidth ? { maxWidth: modalWidth } : {}}

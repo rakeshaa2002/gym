@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Modal, Button } from "react-bootstrap";
-import { IconHome, IconEdit, IconTrash, IconPlus } from "@tabler/icons-react";
+import { IconHome, IconEdit, IconTrash, IconPlus, IconChefHat, IconBarbell } from "@tabler/icons-react";
 import api from "../../utils/api";
 import {
   getAllHeadOffices,
@@ -22,6 +22,8 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import WizardPopup from "../../components/WizardPopup";
 import PhoneField from "../../components/PhoneField";
+import { getWorkoutPlans, assignWorkoutPlan } from "../../api/workoutApi";
+import { normalizeWorkoutPlan } from "../workout/workoutUtils";
 import adminAvatar from "/src/assets/images/avtar/profile.png";
 import superAdminAvatar from "/src/assets/images/avtar/profile-img.png";
 import userAvatar from "/src/assets/images/avtar/samantha-lee.png";
@@ -43,6 +45,68 @@ const USER_MODAL_STEPS = [
   { key: "personal", label: "Personal Details" },
   { key: "documents", label: "Documents" },
 ];
+
+function getModalStepsForRole(role) {
+  if (normalizeRole(role) === "USER") {
+    return USER_MODAL_STEPS.slice(0, 4);
+  }
+
+  return USER_MODAL_STEPS;
+}
+
+function getOrganizationVisibility(role) {
+  const normalizedRole = normalizeRole(role);
+
+  if (normalizedRole === "ADMIN") {
+    return {
+      headOffice: true,
+      branch: true,
+      department: false,
+      team: false,
+      designation: false,
+    };
+  }
+
+  if (normalizedRole === "MANAGER") {
+    return {
+      headOffice: true,
+      branch: true,
+      department: true,
+      team: false,
+      designation: false,
+    };
+  }
+
+  if (normalizedRole === "TRAINER") {
+    return {
+      headOffice: true,
+      branch: true,
+      department: true,
+      team: true,
+      designation: false,
+    };
+  }
+
+  return {
+    headOffice: true,
+    branch: true,
+    department: true,
+    team: true,
+    designation: true,
+  };
+}
+
+function generateEmployeeCode(role, existingCode = "") {
+  const cleaned = String(existingCode || "").trim();
+  if (cleaned) return cleaned;
+
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === "USER") {
+    return `USR${Date.now()}`;
+  }
+
+  return `EMP${Date.now()}`;
+}
 
 const ROLE_COLORS = {
   SUPER_ADMIN: "bg-dark",
@@ -72,6 +136,108 @@ const ROLE_AVATARS = {
 
 function normalizeRole(role) {
   return String(role || "").trim().toUpperCase();
+}
+
+function normalizeDietPlan(plan) {
+  if (!plan) return null;
+  return {
+    id: plan.id,
+    name: plan.name || plan.title || "Untitled menu item",
+  };
+}
+
+const DIET_ASSIGN_ROLES = new Set(["SUPER_ADMIN", "ADMIN", "MANAGER", "TRAINER"]);
+const WORKOUT_ASSIGN_ROLES = new Set(["SUPER_ADMIN", "ADMIN", "MANAGER", "TRAINER"]);
+
+function normalizeLookupText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function splitTeamLeadToken(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { id: "", name: "" };
+
+  const [id, ...rest] = raw.split("::");
+  if (rest.length) {
+    return { id: id.trim(), name: rest.join("::").trim() };
+  }
+
+  return { id: "", name: raw };
+}
+
+function getTeamTrainerIdentity(team) {
+  if (!team) return { id: "", name: "" };
+
+  const rawTrainer =
+    team.teamLead ??
+    team.teamLeadName ??
+    team.trainer ??
+    team.trainerName ??
+    team.reportingManagerName ??
+    team.reportsToName ??
+    "";
+
+  if (rawTrainer && typeof rawTrainer === "object") {
+    return {
+      id: String(rawTrainer.id ?? rawTrainer.userId ?? rawTrainer.value ?? ""),
+      name: String(rawTrainer.name ?? rawTrainer.fullName ?? rawTrainer.label ?? "").trim(),
+    };
+  }
+
+  const encoded = splitTeamLeadToken(rawTrainer);
+  if (encoded.id || encoded.name) {
+    return {
+      id: encoded.id,
+      name: encoded.name,
+    };
+  }
+
+  return {
+    id: String(team.teamLeadId ?? team.trainerId ?? team.reportsToId ?? "").trim(),
+    name: String(rawTrainer || "").trim(),
+  };
+}
+
+function resolveTeamTrainerOption(team, reportingOptions = []) {
+  const identity = getTeamTrainerIdentity(team);
+  if (!team) return { identity, option: null };
+
+  if (identity.id) {
+    const byId = reportingOptions.find((item) => String(item.id) === String(identity.id));
+    if (byId) return { identity: { ...identity, name: byId.name || identity.name }, option: byId };
+  }
+
+  if (identity.name) {
+    const byName = reportingOptions.find((item) => normalizeLookupText(item.name) === normalizeLookupText(identity.name));
+    if (byName) return { identity: { ...identity, id: String(byName.id), name: byName.name || identity.name }, option: byName };
+  }
+
+  return { identity, option: null };
+}
+
+function getTeamTrainerLabel(team) {
+  const identity = getTeamTrainerIdentity(team);
+  return identity.name || "No trainer assigned to this team";
+}
+
+function getTrainerForTeam(team, userRows = []) {
+  if (!team) return null;
+  const teamId = String(team.id ?? "").trim();
+  if (!teamId) return null;
+
+  const matched = userRows.find((row) => {
+    if (normalizeRole(row?.role) !== "TRAINER") return false;
+    const rowTeamId = row?.teamId ?? row?.raw?.teamId ?? row?.raw?.team?.id;
+    return String(rowTeamId ?? "").trim() === teamId;
+  });
+
+  if (!matched) return null;
+
+  return {
+    id: String(matched.id ?? matched.raw?.id ?? "").trim(),
+    name: String(matched.name || [matched.raw?.firstName, matched.raw?.lastName].filter(Boolean).join(" ") || "").trim(),
+    role: "TRAINER",
+  };
 }
 
 function getCurrentUserId(user) {
@@ -458,6 +624,20 @@ export default function User() {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState("");
+  const [dietPlans, setDietPlans] = useState([]);
+  const [dietPlansLoading, setDietPlansLoading] = useState(false);
+  const [dietAssignTarget, setDietAssignTarget] = useState(null);
+  const [dietAssignPlanId, setDietAssignPlanId] = useState("");
+  const [dietAssignError, setDietAssignError] = useState("");
+  const [dietAssignSaving, setDietAssignSaving] = useState(false);
+  const [showDietAssignModal, setShowDietAssignModal] = useState(false);
+  const [workoutPlans, setWorkoutPlans] = useState([]);
+  const [workoutPlansLoading, setWorkoutPlansLoading] = useState(false);
+  const [workoutAssignTarget, setWorkoutAssignTarget] = useState(null);
+  const [workoutAssignPlanId, setWorkoutAssignPlanId] = useState("");
+  const [workoutAssignError, setWorkoutAssignError] = useState("");
+  const [workoutAssignSaving, setWorkoutAssignSaving] = useState(false);
+  const [showWorkoutAssignModal, setShowWorkoutAssignModal] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -486,10 +666,16 @@ export default function User() {
 
   const createAvailability = useMemo(() => getCreateRoleAvailability(currentRole), [currentRole]);
   const canCreateAnything = useMemo(() => Object.values(createAvailability).some(Boolean), [createAvailability]);
+  const canAssignDietPlan = DIET_ASSIGN_ROLES.has(currentRole);
+  const canAssignWorkoutPlan = WORKOUT_ASSIGN_ROLES.has(currentRole);
   const canCreateInCurrentView = useMemo(() => {
     if (viewMode === "users") return Boolean(createAvailability.USER);
     return ROLE_OPTIONS.some((item) => item.value !== "USER" && createAvailability[item.value]);
   }, [createAvailability, viewMode]);
+
+  const modalRole = useMemo(() => normalizeRole(isEdit ? selectedRow?.role : form.role), [isEdit, selectedRow?.role, form.role]);
+  const modalSteps = useMemo(() => getModalStepsForRole(modalRole), [modalRole]);
+  const isCustomerForm = modalRole === "USER";
 
   const creatableRolesForCurrentView = useMemo(() => {
     return ROLE_OPTIONS.filter((item) => {
@@ -517,6 +703,17 @@ export default function User() {
     () => teams.find((item) => String(item.id) === String(form.teamId)) || null,
     [teams, form.teamId],
   );
+
+  const selectedTeamTrainer = useMemo(
+    () => {
+      const matched = getTrainerForTeam(selectedTeam, rows);
+      if (matched) return { identity: matched, option: matched };
+      return resolveTeamTrainerOption(selectedTeam, reportingOptions);
+    },
+    [selectedTeam, reportingOptions, rows],
+  );
+
+  const selectedTeamTrainerName = selectedTeamTrainer.identity.name || getTeamTrainerLabel(selectedTeam);
 
   const selectedDesignation = useMemo(
     () => designations.find((item) => String(item.id) === String(form.designationId)) || null,
@@ -552,8 +749,8 @@ export default function User() {
       selectedHeadOffice?.name,
       selectedBranch?.name,
       selectedDepartment?.name,
-      selectedTeam?.name,
       selectedDesignation?.name,
+      selectedTeam?.name,
     ].filter(Boolean);
 
     return parts.length ? parts.join(" > ") : "Not assigned yet";
@@ -582,10 +779,10 @@ export default function User() {
 
   const totalRoles = useMemo(() => Object.keys(roleCounts).length, [roleCounts]);
   const modalStepIndex = useMemo(() => {
-    const index = USER_MODAL_STEPS.findIndex((item) => item.key === modalTab);
+    const index = modalSteps.findIndex((item) => item.key === modalTab);
     return index >= 0 ? index : 0;
-  }, [modalTab]);
-  const modalStepCount = USER_MODAL_STEPS.length;
+  }, [modalSteps, modalTab]);
+  const modalStepCount = modalSteps.length;
   const isLastModalStep = modalStepIndex === modalStepCount - 1;
 
   const loadOrgData = async () => {
@@ -687,6 +884,71 @@ export default function User() {
   useEffect(() => {
     loadRows();
   }, [currentUserId, currentRole]);
+
+  useEffect(() => {
+    if (!showDietAssignModal) return;
+
+    let cancelled = false;
+
+    const loadDietPlansForAssignment = async () => {
+      setDietPlansLoading(true);
+      setDietAssignError("");
+      try {
+        const response = await api.get("/diet-plans");
+        const data = unwrapData(response);
+        if (!cancelled) {
+          setDietPlans(Array.isArray(data) ? data.map(normalizeDietPlan).filter(Boolean) : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDietPlans([]);
+          setDietAssignError(extractApiErrorMessage(err, "Failed to load diet plans"));
+        }
+      } finally {
+        if (!cancelled) {
+          setDietPlansLoading(false);
+        }
+      }
+    };
+
+    loadDietPlansForAssignment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showDietAssignModal]);
+
+  useEffect(() => {
+    if (!showWorkoutAssignModal) return;
+
+    let cancelled = false;
+
+    const loadWorkoutPlansForAssignment = async () => {
+      setWorkoutPlansLoading(true);
+      setWorkoutAssignError("");
+      try {
+        const data = await getWorkoutPlans();
+        if (!cancelled) {
+          setWorkoutPlans(Array.isArray(data) ? data.map(normalizeWorkoutPlan).filter(Boolean) : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setWorkoutPlans([]);
+          setWorkoutAssignError(extractApiErrorMessage(err, "Failed to load workout plans"));
+        }
+      } finally {
+        if (!cancelled) {
+          setWorkoutPlansLoading(false);
+        }
+      }
+    };
+
+    loadWorkoutPlansForAssignment();
+    return () => {
+      cancelled = true;
+    };
+  }, [showWorkoutAssignModal]);
+
   useEffect(() => {
     const role = normalizeRole(isEdit ? selectedRow?.role : form.role);
     if (!showModal || !currentUserId || !["ADMIN", "MANAGER", "TRAINER"].includes(role)) {
@@ -721,6 +983,31 @@ export default function User() {
       cancelled = true;
     };
   }, [showModal, isEdit, selectedRow?.role, form.role, form.branchId, currentUserId]);
+
+  useEffect(() => {
+    if (!showModal || !isCustomerForm || !form.teamId) return;
+
+    const resolved = getTrainerForTeam(selectedTeam, rows) || resolveTeamTrainerOption(selectedTeam, reportingOptions);
+    if (!resolved.identity?.id && !resolved.identity?.name && !resolved.option?.id && !resolved.option?.name) return;
+
+    setForm((prev) => {
+      const nextReportsToId = resolved.option ? String(resolved.option.id) : String(resolved.identity?.id || "");
+      const nextReportingManagerName = resolved.option?.name || resolved.identity?.name || "";
+
+      if (
+        String(prev.reportsToId || "") === nextReportsToId &&
+        String(prev.reportingManagerName || "") === nextReportingManagerName
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        reportsToId: nextReportsToId,
+        reportingManagerName: nextReportingManagerName,
+      };
+    });
+  }, [showModal, isCustomerForm, form.teamId, selectedTeam, reportingOptions, rows]);
 
   useEffect(() => {
     if (!notice) return;
@@ -759,6 +1046,7 @@ export default function User() {
   const openEdit = (row) => {
     const split = splitName(row?.name);
     const org = row?.raw || {};
+    const orgVisibility = getOrganizationVisibility(row?.role);
 
     setForm({
       ...createEmptyForm(row?.role || "ADMIN"),
@@ -789,10 +1077,10 @@ export default function User() {
       emergencyPhone: org?.emergencyPhone || "",
       status: String(row?.status || "ACTIVE").toUpperCase(),
       headOfficeId: org?.headOfficeId ? String(org.headOfficeId) : "",
-      branchId: org?.branchId ? String(org.branchId) : "",
-      departmentId: org?.departmentId ? String(org.departmentId) : "",
-      teamId: org?.teamId ? String(org.teamId) : "",
-      designationId: org?.designationId ? String(org.designationId) : "",
+      branchId: orgVisibility.branch && org?.branchId ? String(org.branchId) : "",
+      departmentId: orgVisibility.department && org?.departmentId ? String(org.departmentId) : "",
+      teamId: orgVisibility.team && org?.teamId ? String(org.teamId) : "",
+      designationId: orgVisibility.designation && org?.designationId ? String(org.designationId) : "",
       joinDate: toDateInputValue(org?.joinDate),
       bio: org?.bio || "",
       dateOfBirth: toDateInputValue(org?.dateOfBirth),
@@ -864,6 +1152,92 @@ export default function User() {
     setShowModal(false);
     setModalError("");
     setModalTab("identity");
+  };
+
+  const openDietAssignModal = (row) => {
+    if (!canAssignDietPlan || normalizeRole(row?.role) !== "USER") {
+      return;
+    }
+
+    setDietAssignTarget(row);
+    setDietAssignPlanId("");
+    setDietAssignError("");
+    setShowDietAssignModal(true);
+  };
+
+  const openWorkoutAssignModal = (row) => {
+    if (!canAssignWorkoutPlan || normalizeRole(row?.role) !== "USER") {
+      return;
+    }
+
+    setWorkoutAssignTarget(row);
+    setWorkoutAssignPlanId("");
+    setWorkoutAssignError("");
+    setShowWorkoutAssignModal(true);
+  };
+
+  const closeDietAssignModal = () => {
+    setShowDietAssignModal(false);
+    setDietAssignTarget(null);
+    setDietAssignPlanId("");
+    setDietAssignError("");
+    setDietPlans([]);
+  };
+
+  const handleDietAssignSubmit = async () => {
+    if (!dietAssignTarget?.id || !dietAssignPlanId) {
+      setDietAssignError("Please choose a diet plan first.");
+      return;
+    }
+
+    setDietAssignSaving(true);
+    setDietAssignError("");
+    try {
+      await api.put(`/users/${dietAssignTarget.id}/assign-diet/${dietAssignPlanId}`);
+      setNotice("Diet plan assigned successfully");
+      closeDietAssignModal();
+      await loadRows();
+    } catch (err) {
+      const message =
+        err?.response?.status === 403
+          ? "You do not have permission to assign a diet plan to this user."
+          : extractApiErrorMessage(err, "Failed to assign diet plan");
+      setDietAssignError(message);
+    } finally {
+      setDietAssignSaving(false);
+    }
+  };
+
+  const closeWorkoutAssignModal = () => {
+    setShowWorkoutAssignModal(false);
+    setWorkoutAssignTarget(null);
+    setWorkoutAssignPlanId("");
+    setWorkoutAssignError("");
+    setWorkoutPlans([]);
+  };
+
+  const handleWorkoutAssignSubmit = async () => {
+    if (!workoutAssignTarget?.id || !workoutAssignPlanId) {
+      setWorkoutAssignError("Please choose a workout plan first.");
+      return;
+    }
+
+    setWorkoutAssignSaving(true);
+    setWorkoutAssignError("");
+    try {
+      await assignWorkoutPlan(workoutAssignTarget.id, workoutAssignPlanId);
+      setNotice("Workout plan assigned successfully");
+      closeWorkoutAssignModal();
+      await loadRows();
+    } catch (err) {
+      const message =
+        err?.response?.status === 403
+          ? "You do not have permission to assign a workout plan to this user."
+          : extractApiErrorMessage(err, "Failed to assign workout plan");
+      setWorkoutAssignError(message);
+    } finally {
+      setWorkoutAssignSaving(false);
+    }
   };
 
   const goToNextModalStep = () => {
@@ -992,18 +1366,18 @@ export default function User() {
       return {
         endpoint: "/users/admin",
         params: { creatorId: currentUserId },
-        payload: {
-          email: shared.email,
-          password: shared.password,
-          firstName: shared.firstName,
-          lastName: shared.lastName,
-          department: shared.departmentName,
-          phone: shared.phone,
-          employeeId: form.employeeCode.trim() || `EMP${Date.now()}`,
-          qualification: form.qualification.trim() || "N/A",
-          joinDate: form.joinDate || null,
-          headOfficeId: shared.headOfficeId,
-          branchId: shared.branchId,
+      payload: {
+        email: shared.email,
+        password: shared.password,
+        firstName: shared.firstName,
+        lastName: shared.lastName,
+        department: shared.departmentName,
+        phone: shared.phone,
+        employeeId: generateEmployeeCode(role, form.employeeCode),
+        qualification: form.qualification.trim() || "N/A",
+        joinDate: form.joinDate || null,
+        headOfficeId: shared.headOfficeId,
+        branchId: shared.branchId,
           departmentId: shared.departmentId,
           teamId: shared.teamId,
           designationId: shared.designationId,
@@ -1016,18 +1390,18 @@ export default function User() {
       return {
         endpoint: "/users/manager",
         params: { creatorId: currentUserId },
-        payload: {
-          email: shared.email,
-          password: shared.password,
-          firstName: shared.firstName,
-          lastName: shared.lastName,
-          department: shared.departmentName,
-          phone: shared.phone,
-          employeeId: form.employeeCode.trim() || `EMP${Date.now()}`,
-          qualification: form.qualification.trim() || "N/A",
-          joinDate: form.joinDate || null,
-          headOfficeId: shared.headOfficeId,
-          branchId: shared.branchId,
+      payload: {
+        email: shared.email,
+        password: shared.password,
+        firstName: shared.firstName,
+        lastName: shared.lastName,
+        department: shared.departmentName,
+        phone: shared.phone,
+        employeeId: generateEmployeeCode(role, form.employeeCode),
+        qualification: form.qualification.trim() || "N/A",
+        joinDate: form.joinDate || null,
+        headOfficeId: shared.headOfficeId,
+        branchId: shared.branchId,
           departmentId: shared.departmentId,
           teamId: shared.teamId,
           designationId: shared.designationId,
@@ -1120,18 +1494,18 @@ export default function User() {
       return {
         endpoint: `/users/admin/${selectedRow.id}`,
         params: { updaterId: currentUserId },
-        payload: {
-          email: shared.email,
-          password: form.password.trim() || "Temp@123",
-          firstName: shared.firstName,
-          lastName: shared.lastName,
-          department: shared.departmentName,
-          phone: shared.phone,
-          employeeId: form.employeeCode.trim() || "",
-          qualification: form.qualification.trim() || "N/A",
-          joinDate: form.joinDate || null,
-          headOfficeId: shared.headOfficeId,
-          branchId: shared.branchId,
+      payload: {
+        email: shared.email,
+        password: form.password.trim() || "Temp@123",
+        firstName: shared.firstName,
+        lastName: shared.lastName,
+        department: shared.departmentName,
+        phone: shared.phone,
+        employeeId: generateEmployeeCode(role, form.employeeCode),
+        qualification: form.qualification.trim() || "N/A",
+        joinDate: form.joinDate || null,
+        headOfficeId: shared.headOfficeId,
+        branchId: shared.branchId,
           departmentId: shared.departmentId,
           teamId: shared.teamId,
           designationId: shared.designationId,
@@ -1144,18 +1518,18 @@ export default function User() {
       return {
         endpoint: `/users/manager/${selectedRow.id}`,
         params: { updaterId: currentUserId },
-        payload: {
-          email: shared.email,
-          password: form.password.trim() || "Temp@123",
-          firstName: shared.firstName,
-          lastName: shared.lastName,
-          department: shared.departmentName,
-          phone: shared.phone,
-          employeeId: form.employeeCode.trim() || "",
-          qualification: form.qualification.trim() || "N/A",
-          joinDate: form.joinDate || null,
-          headOfficeId: shared.headOfficeId,
-          branchId: shared.branchId,
+      payload: {
+        email: shared.email,
+        password: form.password.trim() || "Temp@123",
+        firstName: shared.firstName,
+        lastName: shared.lastName,
+        department: shared.departmentName,
+        phone: shared.phone,
+        employeeId: generateEmployeeCode(role, form.employeeCode),
+        qualification: form.qualification.trim() || "N/A",
+        joinDate: form.joinDate || null,
+        headOfficeId: shared.headOfficeId,
+        branchId: shared.branchId,
           departmentId: shared.departmentId,
           teamId: shared.teamId,
           designationId: shared.designationId,
@@ -1258,7 +1632,6 @@ export default function User() {
 
     if (role === "ADMIN" || role === "MANAGER") {
       const label = role === "ADMIN" ? "Admin" : "Manager";
-      if (!form.employeeCode.trim()) return `Employee code is required for ${label}`;
       if (!form.qualification.trim()) return `Qualification is required for ${label}`;
       if (!form.departmentId && !form.departmentText.trim()) return `Department is required for ${label}`;
     }
@@ -1283,14 +1656,39 @@ export default function User() {
       if (!form.emergencyPhone.trim()) return "Emergency phone is required for User";
     }
 
+    const orgVisibility = getOrganizationVisibility(role);
+
+    if (role === "ADMIN") {
+      if (!form.headOfficeId) return "Head office is required for Admin";
+      if (!form.branchId) return "Branch is required for Admin";
+      return null;
+    }
+
+    if (role === "MANAGER") {
+      if (!form.headOfficeId) return "Head office is required for Manager";
+      if (!form.branchId) return "Branch is required for Manager";
+      if (!form.departmentId) return "Department is required for Manager";
+      return null;
+    }
+
+    if (role === "TRAINER") {
+      if (!form.headOfficeId) return "Head office is required for Trainer";
+      if (!form.branchId) return "Branch is required for Trainer";
+      if (!form.departmentId) return "Department is required for Trainer";
+      if (!form.teamId) return "Team is required for Trainer";
+      return null;
+    }
+
     if (!form.headOfficeId && !form.branchId && !form.departmentId && !form.teamId && !form.designationId) {
       return null;
     }
 
-    if (form.branchId && !form.headOfficeId) return "Select a head office before choosing a branch";
-    if (form.departmentId && !form.branchId) return "Select a branch before choosing a department";
-    if (form.teamId && !form.departmentId) return "Select a department before choosing a team";
-    if (form.designationId && !form.departmentId) return "Select a department before choosing a designation";
+    if (orgVisibility.branch && form.branchId && !form.headOfficeId) return "Select a head office before choosing a branch";
+    if (orgVisibility.department && form.departmentId && !form.branchId) return "Select a branch before choosing a department";
+    if (isCustomerForm && orgVisibility.team && form.teamId && !form.designationId) {
+      return "Select a designation before choosing a team";
+    }
+    if (orgVisibility.designation && form.designationId && !form.departmentId) return "Select a department before choosing a designation";
 
     return null;
   };
@@ -1301,11 +1699,26 @@ export default function User() {
     const validationMessage = validateForm();
     if (validationMessage) {
       setModalError(validationMessage);
-      setModalTab(validationMessage.toLowerCase().includes("office") || validationMessage.toLowerCase().includes("branch")
-        || validationMessage.toLowerCase().includes("department") || validationMessage.toLowerCase().includes("team")
-        || validationMessage.toLowerCase().includes("designation")
-        ? "organization"
-        : "identity");
+      const lowerMessage = validationMessage.toLowerCase();
+      setModalTab(
+        lowerMessage.includes("office") ||
+        lowerMessage.includes("branch") ||
+        lowerMessage.includes("department") ||
+        lowerMessage.includes("team") ||
+        lowerMessage.includes("designation")
+          ? "organization"
+          : lowerMessage.includes("address") ||
+              lowerMessage.includes("city") ||
+              lowerMessage.includes("emergency")
+            ? "personal"
+            : lowerMessage.includes("weight") ||
+                lowerMessage.includes("height") ||
+                lowerMessage.includes("blood") ||
+                lowerMessage.includes("age") ||
+                lowerMessage.includes("gender")
+              ? "details"
+              : "identity",
+      );
       return;
     }
 
@@ -1511,14 +1924,6 @@ export default function User() {
         <div className="row g-3">
           <SectionHeader label={label} />
           <div className="col-md-6">
-            <label className="form-label">Employee Code *</label>
-            <input
-              className="form-control"
-              value={form.employeeCode}
-              onChange={(e) => setForm({ ...form, employeeCode: e.target.value })}
-            />
-          </div>
-          <div className="col-md-6">
             <label className="form-label">Qualification *</label>
             <select
               className="form-select"
@@ -1718,43 +2123,11 @@ export default function User() {
             </select>
           </div>
           <div className="col-md-6">
-            <label className="form-label">Address *</label>
-            <input
-              className="form-control"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label">City *</label>
-            <input
-              className="form-control"
-              value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-            />
-          </div>
-          <div className="col-md-6">
             <label className="form-label">Medical Conditions</label>
             <input
               className="form-control"
               value={form.medicalConditions}
               onChange={(e) => setForm({ ...form, medicalConditions: e.target.value })}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label">Emergency Contact *</label>
-            <input
-              className="form-control"
-              value={form.emergencyContact}
-              onChange={(e) => setForm({ ...form, emergencyContact: e.target.value })}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label">Emergency Phone *</label>
-            <input
-              className="form-control"
-              value={form.emergencyPhone}
-              onChange={(e) => setForm({ ...form, emergencyPhone: e.target.value.replace(/\D/g, "") })}
             />
           </div>
         </div>
@@ -1775,6 +2148,56 @@ export default function User() {
 
   const renderEmployeePersonalFields = () => {
     const role = normalizeRole(isEdit ? selectedRow?.role : form.role);
+
+    if (role === "USER") {
+      return (
+        <div className="row g-3">
+          <SectionHeader label="Personal Details" />
+          <div className="col-md-12">
+            <label className="form-label">Address *</label>
+            <textarea
+              className="form-control"
+              rows={3}
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              placeholder="House number, street, landmark, area"
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">City *</label>
+            <input
+              className="form-control"
+              value={form.city}
+              onChange={(e) => setForm({ ...form, city: e.target.value })}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Emergency Contact *</label>
+            <input
+              className="form-control"
+              value={form.emergencyContact}
+              onChange={(e) => setForm({ ...form, emergencyContact: e.target.value })}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Emergency Phone *</label>
+            <input
+              className="form-control"
+              value={form.emergencyPhone}
+              onChange={(e) => setForm({ ...form, emergencyPhone: e.target.value.replace(/\D/g, "") })}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Medical Conditions</label>
+            <input
+              className="form-control"
+              value={form.medicalConditions}
+              onChange={(e) => setForm({ ...form, medicalConditions: e.target.value })}
+            />
+          </div>
+        </div>
+      );
+    }
 
     if (!["ADMIN", "MANAGER", "TRAINER"].includes(role)) {
       return <div className="alert alert-light mb-0">Personal details are used for employees only.</div>;
@@ -2005,114 +2428,163 @@ export default function User() {
   const renderOrgFields = () => (
     <div className="row g-3">
       <SectionHeader label="Organization Assignment" />
-      <div className="col-md-6">
-        <label className="form-label">Head Office</label>
-        <select
-          className="form-select"
-          value={form.headOfficeId}
-          disabled={orgLoading}
-          onChange={(e) =>
-            setForm({
-              ...form,
-              headOfficeId: e.target.value,
-              branchId: "",
-              departmentId: "",
-              teamId: "",
-              designationId: "",
-            })
-          }
-        >
-          <option value="">Select Head Office</option>
-          {headOffices.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {getOrganizationVisibility(form.role).headOffice && (
+        <div className="col-md-6">
+          <label className="form-label">Head Office</label>
+          <select
+            className="form-select"
+            value={form.headOfficeId}
+            disabled={orgLoading}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                headOfficeId: e.target.value,
+                branchId: "",
+                departmentId: "",
+                teamId: "",
+                designationId: "",
+              })
+            }
+          >
+            <option value="">Select Head Office</option>
+            {headOffices.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      <div className="col-md-6">
-        <label className="form-label">Branch</label>
-        <select
-          className="form-select"
-          value={form.branchId}
-          disabled={orgLoading || !form.headOfficeId}
-          onChange={(e) =>
-            setForm({
-              ...form,
-              branchId: e.target.value,
-              departmentId: "",
-              teamId: "",
-              designationId: "",
-            })
-          }
-        >
-          <option value="">Select Branch</option>
-          {filteredBranches.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {getOrganizationVisibility(form.role).branch && (
+        <div className="col-md-6">
+          <label className="form-label">Branch</label>
+          <select
+            className="form-select"
+            value={form.branchId}
+            disabled={orgLoading || !form.headOfficeId}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                branchId: e.target.value,
+                departmentId: "",
+                teamId: "",
+                designationId: "",
+              })
+            }
+          >
+            <option value="">Select Branch</option>
+            {filteredBranches.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      <div className="col-md-6">
-        <label className="form-label">Department</label>
-        <select
-          className="form-select"
-          value={form.departmentId}
-          disabled={orgLoading || !form.branchId}
-          onChange={(e) =>
-            setForm({
-              ...form,
-              departmentId: e.target.value,
-              teamId: "",
-              designationId: "",
-            })
-          }
-        >
-          <option value="">Select Department</option>
-          {filteredDepartments.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {getOrganizationVisibility(form.role).department && (
+        <div className="col-md-6">
+          <label className="form-label">Department</label>
+          <select
+            className="form-select"
+            value={form.departmentId}
+            disabled={orgLoading || !form.branchId}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                departmentId: e.target.value,
+                teamId: "",
+                designationId: "",
+              })
+            }
+          >
+            <option value="">Select Department</option>
+            {filteredDepartments.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      <div className="col-md-6">
-        <label className="form-label">Team</label>
-        <select
-          className="form-select"
-          value={form.teamId}
-          disabled={orgLoading || !form.departmentId}
-          onChange={(e) => setForm({ ...form, teamId: e.target.value })}
-        >
-          <option value="">Select Team</option>
-          {filteredTeams.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {getOrganizationVisibility(form.role).designation && (
+        <div className="col-md-6">
+          <label className="form-label">Designation</label>
+          <select
+            className="form-select"
+            value={form.designationId}
+            disabled={orgLoading || !form.departmentId}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                designationId: e.target.value,
+                teamId: "",
+              })
+            }
+          >
+            <option value="">Select Designation</option>
+            {filteredDesignations.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      <div className="col-md-6">
-        <label className="form-label">Designation</label>
-        <select
-          className="form-select"
-          value={form.designationId}
-          disabled={orgLoading || !form.departmentId}
-          onChange={(e) => setForm({ ...form, designationId: e.target.value })}
-        >
-          <option value="">Select Designation</option>
-          {filteredDesignations.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {getOrganizationVisibility(form.role).team && (
+        <div className="col-md-6">
+          <label className="form-label">Team</label>
+          <select
+            className="form-select"
+            value={form.teamId}
+            disabled={orgLoading || !form.departmentId || (isCustomerForm && !form.designationId)}
+            onChange={(e) => {
+              const nextTeamId = e.target.value;
+              const nextTeam = teams.find((item) => String(item.id) === String(nextTeamId)) || null;
+              if (!isCustomerForm) {
+                setForm((prev) => ({
+                  ...prev,
+                  teamId: nextTeamId,
+                }));
+                return;
+              }
+
+              const resolved = getTrainerForTeam(nextTeam, rows) || resolveTeamTrainerOption(nextTeam, reportingOptions);
+
+              setForm((prev) => ({
+                ...prev,
+                teamId: nextTeamId,
+                reportsToId: resolved?.option ? String(resolved.option.id) : String(resolved?.identity?.id || ""),
+                reportingManagerName: resolved?.option?.name || resolved?.identity?.name || "",
+              }));
+            }}
+          >
+            <option value="">Select Team</option>
+            {filteredTeams.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {isCustomerForm && getOrganizationVisibility(form.role).team && (
+        <div className="col-md-6">
+          <label className="form-label">Team Trainer</label>
+          <div className="form-control bg-light">
+            {selectedTeamTrainerName}
+          </div>
+          <small className="text-muted d-block mt-1">
+            {selectedTeamTrainer.option
+              ? "Reports To will be set to this trainer."
+              : "This comes from the team lead saved on the team."}
+          </small>
+        </div>
+      )}
 
       <div className="col-md-12">
         <div className="alert alert-light mb-0">
@@ -2137,6 +2609,7 @@ export default function User() {
             disabled={isEdit}
             onChange={(e) => {
               const nextRole = e.target.value;
+              const orgVisibility = getOrganizationVisibility(nextRole);
               setForm((prev) => ({
                 ...createEmptyForm(nextRole),
                 role: nextRole,
@@ -2149,10 +2622,10 @@ export default function User() {
                 countryCode: prev.countryCode,
                 status: prev.status,
                 headOfficeId: prev.headOfficeId,
-                branchId: prev.branchId,
-                departmentId: prev.departmentId,
-                teamId: prev.teamId,
-                designationId: prev.designationId,
+                branchId: orgVisibility.branch ? prev.branchId : "",
+                departmentId: orgVisibility.department ? prev.departmentId : "",
+                teamId: orgVisibility.team ? prev.teamId : "",
+                designationId: orgVisibility.designation ? prev.designationId : "",
               }));
             }}
           >
@@ -2225,28 +2698,20 @@ export default function User() {
           />
         </div>
 
-        <div className="col-md-6">
-          <label className="form-label">Employee Code</label>
-          <input
-            className="form-control"
-            value={form.employeeCode}
-            onChange={(e) => setForm({ ...form, employeeCode: e.target.value })}
-          />
-        </div>
       </div>
     );
   };
 
   const renderUserModal = () =>
     showModal && (
-      <WizardPopup
-        open={showModal}
-        title={isEdit ? `Edit ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}` : `Add ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}`}
-        steps={USER_MODAL_STEPS.map((item) => item.label)}
-        step={modalStepIndex}
-        onClose={closeModal}
-        onBack={goToPreviousModalStep}
-        onNext={goToNextModalStep}
+        <WizardPopup
+          open={showModal}
+          title={isEdit ? `Edit ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}` : `Add ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}`}
+        steps={modalSteps.map((item) => item.label)}
+          step={modalStepIndex}
+          onClose={closeModal}
+          onBack={goToPreviousModalStep}
+          onNext={goToNextModalStep}
         onSubmit={handleSubmit}
         submitLabel={saving ? "Saving..." : "Save Changes"}
         modalWidth="680px"
@@ -2257,8 +2722,8 @@ export default function User() {
         {modalTab === "identity" && renderIdentityFields()}
         {modalTab === "organization" && renderOrgFields()}
         {modalTab === "details" && renderRoleSpecificFields()}
-        {modalTab === "personal" && renderEmployeePersonalFields()}
-        {modalTab === "documents" && renderEmployeeDocumentFields()}
+        {modalSteps.some((item) => item.key === "personal") && modalTab === "personal" && renderEmployeePersonalFields()}
+        {modalSteps.some((item) => item.key === "documents") && modalTab === "documents" && renderEmployeeDocumentFields()}
       </WizardPopup>
     );
 
@@ -2285,6 +2750,102 @@ export default function User() {
       </Modal>
     );
 
+  const renderDietAssignModal = () => (
+    <Modal show={showDietAssignModal} onHide={closeDietAssignModal} centered>
+      <Modal.Header closeButton>
+        <Modal.Title className="d-flex align-items-center gap-2">
+          <IconChefHat size={18} />
+          Assign Diet Plan
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        {dietAssignError && <div className="alert alert-danger">{dietAssignError}</div>}
+        <p className="text-muted mb-3">
+          Assign a diet plan to <strong>{dietAssignTarget?.name || "this user"}</strong>.
+        </p>
+        <label className="form-label">Diet Plan</label>
+        <select
+          className="form-select"
+          value={dietAssignPlanId}
+          onChange={(e) => setDietAssignPlanId(e.target.value)}
+          disabled={dietPlansLoading}
+        >
+          <option value="">Select a diet plan</option>
+          {dietPlans.map((plan) => (
+            <option key={plan.id} value={plan.id}>
+              {plan.name}
+            </option>
+          ))}
+        </select>
+        {dietPlansLoading && <small className="text-muted d-block mt-2">Loading diet plans...</small>}
+        {!dietPlansLoading && dietPlans.length === 0 && !dietAssignError && (
+          <small className="text-muted d-block mt-2">No diet plans were found.</small>
+        )}
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="light" onClick={closeDietAssignModal} type="button">
+          Cancel
+        </Button>
+        <Button
+          variant="warning"
+          onClick={handleDietAssignSubmit}
+          disabled={dietAssignSaving || dietPlansLoading || !dietAssignPlanId}
+          type="button"
+        >
+          {dietAssignSaving ? "Assigning..." : "Assign Diet Plan"}
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+
+  const renderWorkoutAssignModal = () => (
+    <Modal show={showWorkoutAssignModal} onHide={closeWorkoutAssignModal} centered>
+      <Modal.Header closeButton>
+        <Modal.Title className="d-flex align-items-center gap-2">
+          <IconBarbell size={18} />
+          Assign Workout Plan
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        {workoutAssignError && <div className="alert alert-danger">{workoutAssignError}</div>}
+        <p className="text-muted mb-3">
+          Assign a workout plan to <strong>{workoutAssignTarget?.name || "this user"}</strong>.
+        </p>
+        <label className="form-label">Workout Plan</label>
+        <select
+          className="form-select"
+          value={workoutAssignPlanId}
+          onChange={(e) => setWorkoutAssignPlanId(e.target.value)}
+          disabled={workoutPlansLoading}
+        >
+          <option value="">Select a workout plan</option>
+          {workoutPlans.map((plan) => (
+            <option key={plan.id} value={plan.id}>
+              {plan.name}
+            </option>
+          ))}
+        </select>
+        {workoutPlansLoading && <small className="text-muted d-block mt-2">Loading workout plans...</small>}
+        {!workoutPlansLoading && workoutPlans.length === 0 && !workoutAssignError && (
+          <small className="text-muted d-block mt-2">No workout plans were found.</small>
+        )}
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="light" onClick={closeWorkoutAssignModal} type="button">
+          Cancel
+        </Button>
+        <Button
+          variant="warning"
+          onClick={handleWorkoutAssignSubmit}
+          disabled={workoutAssignSaving || workoutPlansLoading || !workoutAssignPlanId}
+          type="button"
+        >
+          {workoutAssignSaving ? "Assigning..." : "Assign Workout Plan"}
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+
   const scopeHelpers = {
     headOffices,
     branches,
@@ -2300,6 +2861,26 @@ export default function User() {
           <div className="d-flex justify-content-between align-items-start mb-3">
             <span className={`badge ${getRoleBadgeClass(row.role)}`}>{row.role}</span>
             <div className="d-flex gap-1">
+                {canAssignWorkoutPlan && normalizeRole(row.role) === "USER" && (
+                  <button
+                    className="btn btn-sm btn-outline-success"
+                    onClick={() => openWorkoutAssignModal(row)}
+                    type="button"
+                    title="Assign Workout Plan"
+                  >
+                    <IconBarbell size={14} />
+                  </button>
+                )}
+                {canAssignDietPlan && normalizeRole(row.role) === "USER" && (
+                  <button
+                    className="btn btn-sm btn-outline-warning"
+                    onClick={() => openDietAssignModal(row)}
+                    type="button"
+                    title="Assign Diet Plan"
+                >
+                  <IconChefHat size={14} />
+                </button>
+              )}
               <button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(row)} type="button">
                 <IconEdit size={14} />
               </button>
@@ -2357,7 +2938,9 @@ export default function User() {
         </div>
 
         {renderUserModal()}
-        {renderDeleteModal()}
+          {renderDietAssignModal()}
+          {renderWorkoutAssignModal()}
+          {renderDeleteModal()}
       </div>
     );
   }
@@ -2459,6 +3042,26 @@ export default function User() {
                           </span>
                         </td>
                         <td>
+                            {canAssignWorkoutPlan && normalizeRole(row.role) === "USER" && (
+                              <button
+                                className="btn btn-sm btn-outline-success me-1"
+                                onClick={() => openWorkoutAssignModal(row)}
+                                type="button"
+                              >
+                                <IconBarbell size={14} className="me-1" />
+                                Assign Workout Plan
+                              </button>
+                            )}
+                            {canAssignDietPlan && normalizeRole(row.role) === "USER" && (
+                              <button
+                                className="btn btn-sm btn-outline-warning me-1"
+                                onClick={() => openDietAssignModal(row)}
+                                type="button"
+                              >
+                              <IconChefHat size={14} className="me-1" />
+                              Assign Diet Plan
+                            </button>
+                          )}
                           <button
                             className="btn btn-sm btn-outline-primary me-1"
                             onClick={() => openEdit(row)}
@@ -2484,6 +3087,8 @@ export default function User() {
         </div>
 
         {renderUserModal()}
+        {renderDietAssignModal()}
+        {renderWorkoutAssignModal()}
         {renderDeleteModal()}
       </div>
     </div>

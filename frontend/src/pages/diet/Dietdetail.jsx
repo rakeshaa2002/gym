@@ -1,537 +1,422 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from "react-router-dom";
-import { Row, Col, Card, Table, Container, Form, CardBody } from 'react-bootstrap';
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Card, Col, Container, Row } from "react-bootstrap";
 import Slider from "react-slick";
-import Footer from '../../components/Footer';
+import Footer from "../../components/Footer";
+import { useAuth } from "../../context/AuthContext";
+import api from "../../utils/api";
+import { resolveDietImage } from "../../utils/dietImages";
+import { IconArrowLeft, IconChartBar, IconClock, IconGrill, IconHeartBroken, IconListNumbers, IconPointFilled, IconSlice, IconToolsKitchen2Off, IconPhoto } from "@tabler/icons-react";
 
-import diet1 from "/src/assets/images/diet-plan/diet1.png"
-import diet2 from "/src/assets/images/diet-plan/diet2.png"
-import diet3 from "/src/assets/images/diet-plan/diet3.png"
-import testimonialavtar from "/src/assets/images/avtar/samantha-lee.png"
-import { IconChartBar, IconGrill, IconHeartBroken, IconListNumbers, IconMinus, IconPlus, IconPointFilled, IconSlice, IconStarFilled, IconToolsKitchen2Off } from '@tabler/icons-react';
+function normalizeDietPlan(plan) {
+  return {
+    ...plan,
+    name: plan?.name || plan?.title || "Untitled menu item",
+    description: plan?.description || "",
+    ingredients: Array.isArray(plan?.ingredients) ? plan.ingredients : [],
+    directions: Array.isArray(plan?.directions) ? plan.directions : [],
+    tools: Array.isArray(plan?.tools) ? plan.tools : [],
+    galleryImages: (plan?.galleryImages || []).map(resolveDietImage),
+    mainImage: resolveDietImage(plan?.mainImage || plan?.image),
+    calories: Number(plan?.calories) || 0,
+    protein: Number(plan?.protein) || 0,
+    carbs: Number(plan?.carbs) || 0,
+    fats: Number(plan?.fats) || 0,
+    cholesterol: Number(plan?.cholesterol) || 0,
+    sodium: Number(plan?.sodium) || 0,
+    potassium: Number(plan?.potassium) || 0,
+    vitaminA: Number(plan?.vitaminA) || 0,
+    vitaminC: Number(plan?.vitaminC) || 0,
+    calcium: Number(plan?.calcium) || 0,
+    iron: Number(plan?.iron) || 0,
+    prepTime: Number(plan?.prepTime) || 0,
+    cookTime: Number(plan?.cookTime) || 0,
+    totalSteps: Math.max(Number(plan?.totalSteps) || 1, 1),
+    healthScore: Number(plan?.healthScore) || 0,
+    status: plan?.status || "ACTIVE",
+  };
+}
+
+const formatTime = (value) => {
+  if (!value) return "--";
+  const parsed = new Date(`1970-01-01T${value}`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
+
+const unwrapResponseData = (response) => {
+  if (response?.data && Object.prototype.hasOwnProperty.call(response.data, "data")) {
+    return response.data.data;
+  }
+
+  return response?.data ?? null;
+};
 
 export default function Dietdetail() {
-    const [value, setValue] = useState("1");
-    var wokoutslider = {
-        infinite: true,
-        slidesToShow: 2,
-        slidesToScroll: 1,
-        speed: 1000,
-        autoplay: true,
-        autoplaySpeed: 1500,
-        responsive: [
-            {
-                breakpoint: 1441,
-                settings: {
-                    slidesToShow: 3,
-                }
-            },
-            {
-                breakpoint: 768,
-                settings: {
-                    slidesToShow: 2,
-                }
-            },
-            {
-                breakpoint: 481,
-                settings: {
-                    slidesToShow: 1,
-                }
-            }
-        ]
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const currentRole = String(user?.role || "").toUpperCase();
+  const [plan, setPlan] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [emptyMessage, setEmptyMessage] = useState("");
+
+  useEffect(() => {
+    const loadPlan = async () => {
+      setLoading(true);
+      setError("");
+      setEmptyMessage("");
+      try {
+        if (currentRole === "USER" && !id) {
+          const res = await api.get("/users/me/diet-plan");
+          const data = unwrapResponseData(res);
+          if (data) {
+            setPlan(normalizeDietPlan(data));
+          } else {
+            setPlan(null);
+            setEmptyMessage("No diet plan has been assigned to you yet.");
+          }
+          return;
+        }
+
+        if (!id) {
+          setPlan(null);
+          setEmptyMessage(currentRole === "USER"
+            ? "No diet plan has been assigned to you yet."
+            : "Pick a menu item from Diet Menu to view its details.");
+          return;
+        }
+
+        const res = await api.get(`/diet-plans/${id}`);
+        const data = unwrapResponseData(res);
+        setPlan(data ? normalizeDietPlan(data) : null);
+      } catch (err) {
+        setPlan(null);
+        setError(currentRole === "USER" && !id
+          ? "Unable to load your assigned diet plan."
+          : "Unable to load this diet menu item.");
+      } finally {
+        setLoading(false);
+      }
     };
-    var testimonialslider = {
-        infinite: true,
-        slidesToShow: 4,
-        slidesToScroll: 1,
-        infinite: true,
-        speed: 1000,
-        autoplay: true,
-        autoplaySpeed: 1600,
-        responsive: [
-            {
-                breakpoint: 1441,
-                settings: {
-                    slidesToShow: 3,
-                }
-            },
-            {
-                breakpoint: 992,
-                settings: {
-                    slidesToShow: 2,
-                }
-            },
-            {
-                breakpoint: 768,
-                settings: {
-                    slidesToShow: 1,
-                }
-            }
-        ]
-    };
-    return (
-        <>
 
-            {/* Theme Body Start */}
-            <main className="themebody-wrap">
+    loadPlan();
+  }, [id, currentRole]);
 
-                <div className="theme-body">
-                    <Container fluid>
-                        <Row>
-                            <div className="col-xxl-8">
-                                <div className="card">
-                                    <div className="card-body">
-                                        <div className="row gy-4">
-                                            <div className="col-md-12">
-                                                <Slider {...wokoutslider} className="popularworkout-slider arrow-style1">
-                                                    <div>
-                                                        <div className="workout-grid">
-                                                            <img src={diet1} alt="" className="img-fluid w-100" />
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="workout-grid">
-                                                            <img src={diet2} alt="" className="img-fluid w-100" />
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="workout-grid">
-                                                            <img src={diet3} alt="" className="img-fluid w-100" />
-                                                        </div>
-                                                    </div>
-                                                </Slider>
-                                            </div>
-                                            <div className="col-md-12">
-                                                <div className="d-flex align-items-center justify-content-between mb-2">
-                                                    <span className="badge badge-primary">Breakfast</span>
-                                                    <span>                                                       
-                                                        <IconStarFilled className='text-warning'/>
-                                                        4.8/5 (+220 reviews)
-                                                    </span>
-                                                </div>
-                                                <h3 className="mb-2 fw-bold">Scrambled Eggs with Turkey Bacon and Sauteed Spinach</h3>
-                                                <p>This nutritious breakfast combines high-quality protein and healthy fats to fuel your day. The scrambled eggs provide essential amino acids, while the turkey bacon adds a lean source of protein. Sautéed spinach contributes vitamins and minerals, making this dish both satisfying and health-conscious.</p>
-                                                <div className="row gy-4 mt-0">
-                                                    <div className="col-md-4 col-6">
-                                                        <div className="cooking-grid">
-                                                            <div className="icon-wrap">                                                               
-                                                                <IconToolsKitchen2Off/>
-                                                            </div>
-                                                            <div>
-                                                                <p>Eat Time</p>
-                                                                <strong>8:00 AM</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-4 col-6">
-                                                        <div className="cooking-grid">
-                                                            <div className="icon-wrap">
-                                                                <IconSlice/>
-                                                            </div>
-                                                            <div>
-                                                                <p>Prep Time</p>
-                                                                <strong>5 minutes</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-4 col-6">
-                                                        <div className="cooking-grid">
-                                                            <div className="icon-wrap">                                                               
-                                                                <IconGrill/>
-                                                            </div>
-                                                            <div>
-                                                                <p>Cook Time</p>
-                                                                <strong>10 minutes</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-4 col-6">
-                                                        <div className="cooking-grid">
-                                                            <div className="icon-wrap">                                                               
-                                                                <IconChartBar/>
-                                                            </div>
-                                                            <div>
-                                                                <p>Difficulty</p>
-                                                                <strong>Medium</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-4 col-6">
-                                                        <div className="cooking-grid">
-                                                            <div className="icon-wrap">                                                               
-                                                                <IconListNumbers />
-                                                            </div>
-                                                            <div>
-                                                                <p>Total Steps</p>
-                                                                <strong>4 Steps</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-md-4 col-6">
-                                                        <div className="cooking-grid">
-                                                            <div className="icon-wrap">                                                               
-                                                                <IconHeartBroken />
-                                                            </div>
-                                                            <div>
-                                                                <p>Health Score</p>
-                                                                <strong>85/100</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+  const imageList = useMemo(() => {
+    if (!plan) return [];
+    const unique = [plan.mainImage, ...(plan.galleryImages || [])].filter(Boolean);
+    return [...new Set(unique)];
+  }, [plan]);
+
+  const sliderSettings = useMemo(() => ({
+    infinite: imageList.length > 1,
+    slidesToShow: 1,
+    slidesToScroll: 1,
+    speed: 900,
+    autoplay: imageList.length > 1,
+    autoplaySpeed: 1800,
+    cssEase: "linear",
+    dots: imageList.length > 1,
+    arrows: imageList.length > 1,
+    pauseOnHover: false,
+    pauseOnFocus: false,
+    adaptiveHeight: true,
+  }), [imageList.length]);
+
+  const goBack = () => navigate("/dietplan");
+
+  return (
+    <>
+      <main className="themebody-wrap">
+        <div className="theme-body">
+          <Container fluid>
+            <div className="d-flex align-items-center justify-content-between mb-3">
+              <div>
+                <button type="button" className="btn btn-light btn-sm" onClick={goBack}>
+                  <IconArrowLeft size={16} className="me-1" />
+                  Back to Diet Menu
+                </button>
+              </div>
+              <div className="text-end">
+                <h2 className="mb-0">{currentRole === "USER" ? "My Diet Plan" : "Diet Detail"}</h2>
+                <small className="text-muted">{plan?.name || "View the selected menu item"}</small>
+              </div>
+            </div>
+
+            {loading && <div className="alert alert-info">Loading diet menu item...</div>}
+            {error && <div className="alert alert-danger">{error}</div>}
+            {!loading && !error && emptyMessage && (
+              <div className="alert alert-warning">{emptyMessage}</div>
+            )}
+            {!loading && !error && !emptyMessage && !id && currentRole !== "USER" && (
+              <div className="alert alert-warning">
+                Pick a menu item from <Link to="/dietplan">Diet Menu</Link> to view its details.
+              </div>
+            )}
+            {!loading && !error && !emptyMessage && id && !plan && currentRole !== "USER" && (
+              <div className="alert alert-warning">No diet menu item was found for this id.</div>
+            )}
+
+            {plan && (
+              <Row>
+                <Col xxl={8}>
+                  <Card className="mb-4">
+                    <Card.Body>
+                      {imageList.length > 0 ? (
+                        imageList.length > 1 ? (
+                          <Slider {...sliderSettings} className="popularworkout-slider arrow-style1">
+                            {imageList.map((image, index) => (
+                              <div key={`${image}-${index}`}>
+                                <div className="workout-grid">
+                                  <img src={image} alt={`${plan.name} ${index + 1}`} className="img-fluid w-100 rounded-3" style={{ maxHeight: 420, objectFit: "cover" }} />
                                 </div>
-                                <div className="card">
-                                    <div className="card-body">
-                                        <div className="row">
-                                            <div className="col-md-6">
-                                                <h4 className="fw-bold mb-4">Directions</h4>
-                                                <ul className="direction-list">
-                                                    <li>
-                                                        <div className="number-wrap">1</div>
-                                                        <h5 className="fw-semibold">Prep the Ingredients</h5>
-                                                        <p>Crack the eggs into a mixing bowl, add a pinch of salt and pepper, and whisk until fully blended.</p>
-                                                    </li>
-                                                    <li>
-                                                        <div className="number-wrap">2</div>
-                                                        <h5 className="fw-semibold">Cook the Turkey Bacon</h5>
-                                                        <p>Heat the skillet over medium heat and cook the turkey bacon until crispy, about 3-4 minutes on each side. Remove and set aside.</p>
-                                                    </li>
-                                                    <li>
-                                                        <div className="number-wrap">3</div>
-                                                        <h5 className="fw-semibold">Saute the Spinach</h5>
-                                                        <p>In the same skillet, add olive oil and spinach. Saute until the spinach is wilted, about 2-3 minutes. Remove and set aside.</p>
-                                                    </li>
-                                                    <li>
-                                                        <div className="number-wrap">4</div>
-                                                        <h5 className="fw-semibold">Scramble the Eggs</h5>
-                                                        <p>Pour the egg mixture into the skillet and cook, stirring gently with a spatula, until the eggs are fully cooked but still soft, about 2-3 minutes.</p>
-                                                    </li>
-                                                    <li>
-                                                        <div className="number-wrap">5</div>
-                                                        <h5 className="fw-semibold">Assemble and Serve</h5>
-                                                        <p>Plate the scrambled eggs with turkey bacon and sauteed spinach. Serve immediately.</p>
-                                                    </li>
-                                                </ul>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="ps-md-3 h-100">
-                                                    <h4 className="fw-bold mb-4">Tools and Equipments</h4>
-                                                    <ul className="toolequipment-list">
-                                                        <li>
-                                                            <div className="icon-wrap">                                                               
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            Non - stick skillet
-                                                        </li>
-                                                        <li>
-                                                            <div className="icon-wrap">
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            Spatula
-                                                        </li>
-                                                        <li>
-                                                            <div className="icon-wrap">
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            Mixing bow|
-                                                        </li>
-                                                        <li>
-                                                            <div className="icon-wrap">
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            Fork
-                                                        </li>
-                                                        <li>
-                                                            <div className="icon-wrap">
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            Measuring spoons
-                                                        </li>
-                                                    </ul>
-                                                    <h4 className="fw-bold mt-4 mb-4">Notes</h4>
-                                                    <ul className="toolequipment-list">
-                                                        <li className="align-items-start">
-                                                            <div className="icon-wrap">
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            For a lower-calorie option, substitute olive oil with a cooking spray and reduce the amount of turkey bacon.
-                                                        </li>
-                                                        <li className="align-items-start">
-                                                            <div className="icon-wrap">
-                                                                <IconPointFilled/>
-                                                            </div>
-                                                            Add a sprinkle of cheese or herbs like chives or parsley for extra flavor.
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="col-xxl-4">
-                                <div className="row">
-                                    <div className="col-xxl-12 col-lg-4 col-md-6">
-                                        <div className="card bg-primary">
-                                            <div className="card-body">
-                                                <div className="row gy-4">
-                                                    <div className="col-xxl-3 col-6 text-center">
-                                                        <h5 className="mb-3 fw-bold text-white text-nowrap">Calories</h5>
-                                                        <div className="py-3 rounded-4 bg-white text-center">
-                                                            <h5 className="fw-bold">350</h5>
-                                                            <span className="font-light">cal</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-xxl-3 col-6 text-center">
-                                                        <h5 className="mb-3 fw-bold text-white text-nowrap">Protein</h5>
-                                                        <div className="py-3 rounded-4 bg-white text-center">
-                                                            <h5 className="fw-bold">25</h5>
-                                                            <span className="font-light">gr</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-xxl-3 col-6 text-center">
-                                                        <h5 className="mb-3 fw-bold text-white text-nowrap">Carbs</h5>
-                                                        <div className="py-3 rounded-4 bg-white text-center">
-                                                            <h5 className="fw-bold">10</h5>
-                                                            <span className="font-light">gr</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-xxl-3 col-6 text-center">
-                                                        <h5 className="mb-3 fw-bold text-white text-nowrap">Fats</h5>
-                                                        <div className="py-3 rounded-4 bg-white text-center">
-                                                            <h5 className="fw-bold">20</h5>
-                                                            <span className="font-light">gr</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="col-xxl-12 col-lg-4 col-md-6">
-                                        <div className="card">
-                                            <div className="card-body">
-                                                <div className="d-flex align-items-center justify-content-between mb-4">
-                                                    <div className="cooking-grid">
-                                                        <div className="icon-wrap">                                                           
-                                                            <IconToolsKitchen2Off/>
-                                                        </div>
-                                                        <div>
-                                                            <p>Eat Time</p>
-                                                            <strong>8:00 AM</strong>
-                                                        </div>
-                                                    </div>
-                                                    <div className="counter-group">
-                                                        <span className="icon-wrap">                                                           
-                                                            <IconMinus/>
-                                                        </span>
-                                                        <input value={value} onChange={(e) => setValue(e.target.value)} className='form-control' />
-                                                        <span className="icon-wrap">                                                           
-                                                            <IconPlus/>
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <h4 className="fw-bold mb-4">Ingredients</h4>
-                                                <ul className="toolequipment-list">
-                                                    <li>
-                                                        <div className="icon-wrap">
-                                                            <IconPointFilled/>
-                                                        </div>
-                                                        2 large eggs
-                                                    </li>
-                                                    <li>
-                                                        <div className="icon-wrap">
-                                                            <IconPointFilled/>
-                                                        </div>
-                                                        2 slices of turkey bacon
-                                                    </li>
-                                                    <li>
-                                                        <div className="icon-wrap">
-                                                            <IconPointFilled/>
-                                                        </div>
-                                                        Mixing bow|
-                                                    </li>
-                                                    <li>
-                                                        <div className="icon-wrap">
-                                                            <IconPointFilled/>
-                                                        </div>
-                                                        1 cup fresh spinach
-                                                    </li>
-                                                    <li>
-                                                        <div className="icon-wrap">
-                                                            <IconPointFilled/>
-                                                        </div>
-                                                        1 tablespoon olive oil
-                                                    </li>
-                                                    <li>
-                                                        <div className="icon-wrap">
-                                                            <IconPointFilled/>
-                                                        </div>
-                                                        Salt and pepper to taste
-                                                    </li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="col-xxl-12 col-lg-4 col-md-12">
-                                        <div className="card">
-                                            <div className="card-body">
-                                                <h4 className="fw-bold mb-3">Nutrition Facts</h4>
-                                                <table className="table nutritionfacts-table">
-                                                    <tbody>
-                                                        <tr>
-                                                            <td>Calories</td>
-                                                            <td className="text-end">350</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Total Carbohydrates</td>
-                                                            <td className="text-end">10 gr</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Protein</td>
-                                                            <td className="text-end">25 gr</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Total Fat</td>
-                                                            <td className="text-end">20 gr</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Cholesterol</td>
-                                                            <td className="text-end">370 mg</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Sodium</td>
-                                                            <td className="text-end">720 mg</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Potassium</td>
-                                                            <td className="text-end">500 mg</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Vitamin A</td>
-                                                            <td className="text-end">120% DV</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Vitamin C</td>
-                                                            <td className="text-end">20% DV</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Calcium</td>
-                                                            <td className="text-end">10% DV</td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td>Iron</td>
-                                                            <td className="text-end">15% DV</td>
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="col-12">
-                                <Slider {...testimonialslider} className="testimonial-slider arrow-style1">
-                                    <div>
-                                        <div className="testimonial-grid">
-                                            <div className="d-flex align-items-center gap-3 mb-4">
-                                                <div className="img-wrap">
-                                                    <img src={testimonialavtar} alt="" className="img-fluid" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="mb-2">Samantha Lee</h4>
-                                                    <span className="fs-6">                                                       
-                                                        <IconStarFilled className='text-warning me-2'/>
-                                                        5/5
-\                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p>My go-to breakfast is quick, filling, and customizable. I love the fresh taste of spinach, and it’s easy to add other veggies or spices!</p>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="testimonial-grid">
-                                            <div className="d-flex align-items-center gap-3 mb-4">
-                                                <div className="img-wrap">
-                                                    <img src={testimonialavtar} alt="" className="img-fluid" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="mb-2">David Chen</h4>
-                                                    <span className="fs-6">
-                                                        <IconStarFilled className='text-warning me-2'/>                                                       
-                                                        4.7/5
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p>Delicious and healthy. I sometimes add mushrooms for extra veggies. The turkey bacon is a nice, lean alternative to regular bacon.</p>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="testimonial-grid">
-                                            <div className="d-flex align-items-center gap-3 mb-4">
-                                                <div className="img-wrap">
-                                                    <img src={testimonialavtar} alt="" className="img-fluid" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="mb-2">Jessica Moore</h4>
-                                                    <span className="fs-6">
-                                                        <IconStarFilled className='text-warning me-2'/>
-                                                        4.9/5
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p>Perfect way to start the day! The combination of eggs, spinach, and turkey bacon is both tasty and nutritious. Highly recommend!</p>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="testimonial-grid">
-                                            <div className="d-flex align-items-center gap-3 mb-4">
-                                                <div className="img-wrap">
-                                                    <img src={testimonialavtar} alt="" className="img-fluid" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="mb-2">David Chen</h4>
-                                                    <span className="fs-6">
-                                                        <IconStarFilled className='text-warning me-2'/>
-                                                        4.7/5
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p>Delicious and healthy. I sometimes add mushrooms for extra veggies. The turkey bacon is a nice, lean alternative to regular bacon.</p>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="testimonial-grid">
-                                            <div className="d-flex align-items-center gap-3 mb-4">
-                                                <div className="img-wrap">
-                                                    <img src={testimonialavtar} alt="" className="img-fluid" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="mb-2">David Chen</h4>
-                                                    <span className="fs-6">
-                                                        <IconStarFilled className='text-warning me-2'/>
-                                                        4.7/5
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p>Delicious and healthy. I sometimes add mushrooms for extra veggies. The turkey bacon is a nice, lean alternative to regular bacon.</p>
-                                        </div>
-                                    </div>
-                                </Slider>
-                            </div>
-                        </Row>
-                    </Container>
-                </div>
+                              </div>
+                            ))}
+                          </Slider>
+                        ) : (
+                          <img src={imageList[0]} alt={plan.name} className="img-fluid w-100 rounded-3" style={{ maxHeight: 420, objectFit: "cover" }} />
+                        )
+                      ) : (
+                        <div className="d-flex align-items-center justify-content-center bg-light rounded-3" style={{ minHeight: 320 }}>
+                          <div className="text-center text-muted">
+                            <IconPhoto size={32} className="mb-2" />
+                            <div>No image attached</div>
+                          </div>
+                        </div>
+                      )}
 
-            </main>
-            {/* Theme Body End */}
+                      <div className="d-flex align-items-center justify-content-between mt-4 mb-2">
+                        <span className={`badge ${plan.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>{plan.status}</span>
+                        <span className="d-flex align-items-center gap-1 text-muted">
+                          <IconHeartBroken size={16} />
+                          {plan.healthScore}/100
+                        </span>
+                      </div>
 
-            {/* Footer Start */}
-            <Footer />
-            {/* Footer End */}
+                      <h3 className="mb-2 fw-bold">{plan.name}</h3>
+                      <p className="text-muted mb-4">{plan.description || "No description provided."}</p>
 
-        </>
-    );
+                      <Row className="gy-3">
+                        <Col md={4} sm={6}>
+                          <div className="cooking-grid">
+                            <div className="icon-wrap">
+                              <IconToolsKitchen2Off />
+                            </div>
+                            <div>
+                              <p>Eat Time</p>
+                              <strong>{formatTime(plan.eatTime)}</strong>
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={4} sm={6}>
+                          <div className="cooking-grid">
+                            <div className="icon-wrap">
+                              <IconSlice />
+                            </div>
+                            <div>
+                              <p>Prep Time</p>
+                              <strong>{plan.prepTime} minutes</strong>
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={4} sm={6}>
+                          <div className="cooking-grid">
+                            <div className="icon-wrap">
+                              <IconGrill />
+                            </div>
+                            <div>
+                              <p>Cook Time</p>
+                              <strong>{plan.cookTime} minutes</strong>
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={4} sm={6}>
+                          <div className="cooking-grid">
+                            <div className="icon-wrap">
+                              <IconChartBar />
+                            </div>
+                            <div>
+                              <p>Difficulty</p>
+                              <strong>{plan.difficulty || "Medium"}</strong>
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={4} sm={6}>
+                          <div className="cooking-grid">
+                            <div className="icon-wrap">
+                              <IconListNumbers />
+                            </div>
+                            <div>
+                              <p>Total Steps</p>
+                              <strong>{plan.totalSteps} steps</strong>
+                            </div>
+                          </div>
+                        </Col>
+                        <Col md={4} sm={6}>
+                          <div className="cooking-grid">
+                            <div className="icon-wrap">
+                              <IconClock />
+                            </div>
+                            <div>
+                              <p>Total Time</p>
+                              <strong>{plan.prepTime + plan.cookTime} minutes</strong>
+                            </div>
+                          </div>
+                        </Col>
+                      </Row>
+                    </Card.Body>
+                  </Card>
+
+                  <Card className="mb-4">
+                    <Card.Body>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <h4 className="fw-bold mb-4">Directions</h4>
+                          {plan.directions.length > 0 ? (
+                            <ul className="direction-list">
+                              {plan.directions.map((step, index) => (
+                                <li key={`${step}-${index}`}>
+                                  <div className="number-wrap">{index + 1}</div>
+                                  <h5 className="fw-semibold">Step {index + 1}</h5>
+                                  <p>{step}</p>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="text-muted">No directions added yet.</div>
+                          )}
+                        </div>
+                        <div className="col-md-6">
+                          <div className="ps-md-3 h-100">
+                            <h4 className="fw-bold mb-4">Tools and Equipment</h4>
+                            {plan.tools.length > 0 ? (
+                              <ul className="toolequipment-list">
+                                {plan.tools.map((tool, index) => (
+                                  <li key={`${tool}-${index}`}>
+                                    <div className="icon-wrap">
+                                      <IconPointFilled />
+                                    </div>
+                                    {tool}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="text-muted mb-4">No tools listed.</div>
+                            )}
+
+                            <h4 className="fw-bold mt-4 mb-4">Notes</h4>
+                            {plan.notes ? (
+                              <ul className="toolequipment-list">
+                                <li className="align-items-start">
+                                  <div className="icon-wrap">
+                                    <IconPointFilled />
+                                  </div>
+                                  {plan.notes}
+                                </li>
+                              </ul>
+                            ) : (
+                              <div className="text-muted">No notes added.</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xxl={4}>
+                  <Row>
+                    <Col xxl={12} lg={4} md={6}>
+                      <Card className="bg-primary mb-4">
+                        <Card.Body>
+                          <div className="row gy-4">
+                            <div className="col-6 text-center">
+                              <h5 className="mb-3 fw-bold text-white text-nowrap">Calories</h5>
+                              <div className="py-3 rounded-4 bg-white text-center">
+                                <h5 className="fw-bold mb-0">{plan.calories}</h5>
+                                <span className="font-light">cal</span>
+                              </div>
+                            </div>
+                            <div className="col-6 text-center">
+                              <h5 className="mb-3 fw-bold text-white text-nowrap">Protein</h5>
+                              <div className="py-3 rounded-4 bg-white text-center">
+                                <h5 className="fw-bold mb-0">{plan.protein}</h5>
+                                <span className="font-light">g</span>
+                              </div>
+                            </div>
+                            <div className="col-6 text-center">
+                              <h5 className="mb-3 fw-bold text-white text-nowrap">Carbs</h5>
+                              <div className="py-3 rounded-4 bg-white text-center">
+                                <h5 className="fw-bold mb-0">{plan.carbs}</h5>
+                                <span className="font-light">g</span>
+                              </div>
+                            </div>
+                            <div className="col-6 text-center">
+                              <h5 className="mb-3 fw-bold text-white text-nowrap">Fats</h5>
+                              <div className="py-3 rounded-4 bg-white text-center">
+                                <h5 className="fw-bold mb-0">{plan.fats}</h5>
+                                <span className="font-light">g</span>
+                              </div>
+                            </div>
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+
+                    <Col xxl={12} lg={4} md={6}>
+                      <Card className="mb-4">
+                        <Card.Body>
+                          <h4 className="fw-bold mb-3">Ingredients</h4>
+                          {plan.ingredients.length > 0 ? (
+                            <ul className="toolequipment-list">
+                              {plan.ingredients.map((ingredient, index) => (
+                                <li key={`${ingredient}-${index}`}>
+                                  <div className="icon-wrap">
+                                    <IconPointFilled />
+                                  </div>
+                                  {ingredient}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="text-muted">No ingredients added.</div>
+                          )}
+                        </Card.Body>
+                      </Card>
+                    </Col>
+
+                    <Col xxl={12} lg={4} md={12}>
+                      <Card>
+                        <Card.Body>
+                          <h4 className="fw-bold mb-3">Nutrition Facts</h4>
+                          <table className="table nutritionfacts-table">
+                            <tbody>
+                              <tr><td>Calories</td><td className="text-end">{plan.calories}</td></tr>
+                              <tr><td>Protein</td><td className="text-end">{plan.protein} g</td></tr>
+                              <tr><td>Carbs</td><td className="text-end">{plan.carbs} g</td></tr>
+                              <tr><td>Fats</td><td className="text-end">{plan.fats} g</td></tr>
+                              <tr><td>Cholesterol</td><td className="text-end">{plan.cholesterol} mg</td></tr>
+                              <tr><td>Sodium</td><td className="text-end">{plan.sodium} mg</td></tr>
+                              <tr><td>Potassium</td><td className="text-end">{plan.potassium} mg</td></tr>
+                              <tr><td>Vitamin A</td><td className="text-end">{plan.vitaminA}% DV</td></tr>
+                              <tr><td>Vitamin C</td><td className="text-end">{plan.vitaminC}% DV</td></tr>
+                              <tr><td>Calcium</td><td className="text-end">{plan.calcium}% DV</td></tr>
+                              <tr><td>Iron</td><td className="text-end">{plan.iron}% DV</td></tr>
+                            </tbody>
+                          </table>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+                </Col>
+              </Row>
+            )}
+          </Container>
+        </div>
+      </main>
+      <Footer />
+    </>
+  );
 }

@@ -20,6 +20,15 @@ import Workouttopfilter from "../pages/workout/Workouttopfilter";
 import Upperbodyworkout from "../pages/workout/Upperbodyworkout";
 import Createworkout from "../pages/workout/Createworkout";
 import Workoutsummary from "../pages/workout/Workoutsummary";
+import WorkoutTypeMaster from "../pages/workout/WorkoutTypeMaster";
+import BodyPartMaster from "../pages/workout/BodyPartMaster";
+import ExerciseMaster from "../pages/workout/ExerciseMaster";
+import WorkoutPlanMaster from "../pages/workout/WorkoutPlanMaster";
+import WorkoutPlanDetail from "../pages/workout/WorkoutPlanDetail";
+import WorkoutDetail from "../pages/workout/WorkoutDetail";
+import TrainerDutySchedule from "../pages/schedule/TrainerDutySchedule";
+import UserWorkoutSchedule from "../pages/schedule/UserWorkoutSchedule";
+import MySchedule from "../pages/schedule/MySchedule";
 import Dietplan from "../pages/diet/Dietplan";
 import Dietdetail from "../pages/diet/Dietdetail";
 import Goals from "../pages/goals/Goals";
@@ -34,6 +43,7 @@ import Branch from "../pages/usersmanagement/branch";
 import DepartmentPage from "../pages/usersmanagement/department";
 import DesignationPage from "../pages/usersmanagement/designation";
 import Team from "../pages/usersmanagement/team";
+import RolePermissions from "../pages/permissions/RolePermissions";
 
 export default function AppRoutes() {
   return (
@@ -57,8 +67,19 @@ export default function AppRoutes() {
         <Route path="/upperbody-workout" element={<Upperbodyworkout />} />
         <Route path="/create-workout" element={<Createworkout />} />
         <Route path="/workout-summary" element={<Workoutsummary />} />
+        <Route path="/workout-type" element={<WorkoutTypeMaster />} />
+        <Route path="/body-part" element={<BodyPartMaster />} />
+        <Route path="/exercise-master" element={<ExerciseMaster />} />
+        <Route path="/workout-plan" element={<WorkoutPlanMaster />} />
+        <Route path="/workout-plan/:id" element={<WorkoutPlanDetail />} />
+        <Route path="/workout-detail" element={<WorkoutDetail />} />
+        <Route path="/workout-detail/:id" element={<WorkoutDetail />} />
+        <Route path="/trainer-duty-schedule" element={<TrainerDutySchedule />} />
+        <Route path="/user-workout-schedule" element={<UserWorkoutSchedule />} />
+        <Route path="/my-schedule" element={<MySchedule />} />
         <Route path="/dietplan" element={<Dietplan />} />
         <Route path="/diet-detail" element={<Dietdetail />} />
+        <Route path="/diet-detail/:id" element={<Dietdetail />} />
         <Route path="/goals" element={<Goals />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/progress" element={<Progress />} />
@@ -72,6 +93,7 @@ export default function AppRoutes() {
         <Route path="/departments" element={<DepartmentPage />} />
         <Route path="/designations" element={<DesignationPage />} />
         <Route path="/teams" element={<Team />} />
+        <Route path="/role-permissions" element={<RolePermissions />} />
       </Route>
 
       {/* Fallback */}

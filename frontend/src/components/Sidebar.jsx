@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import SimpleBar from "simplebar-react";
 import { useSidebarContext } from "../context/useSidebarContext";
 import { useAuth } from "../context/AuthContext";
+import { canAccess } from "../config/pagePermissions";
 
 import logo from "/src/assets/images/logo/logo.png";
 import sidebarvactor from "/src/assets/images/pro-sec.png";
@@ -22,11 +23,11 @@ import {
 
 const menuPaths = {
   Dashboards: ["/"],
-  "Users & Teams": ["/employees", "/users", "/headoffice", "/branches", "/departments", "/designations", "/teams"],
-  Workout: ["/workout-filter", "/workout-topfilter", "/upperbody-workout", "/create-workout", "/workout-summary"],
+  "Users & Teams": ["/employees", "/users", "/headoffice", "/branches", "/departments", "/designations", "/teams", "/role-permissions"],
+  Workout: ["/workout-type", "/body-part", "/exercise-master", "/workout-plan", "/workout-detail", "/create-workout", "/workout-summary"],
   DietPlan: ["/dietplan", "/diet-detail"],
+  Calendar: ["/schedule", "/trainer-duty-schedule", "/user-workout-schedule", "/my-schedule"],
   Goals: ["/goals"],
-  Calendar: ["/schedule"],
   Progress: ["/progress"],
   Profile: ["/profile"],
   Authentication: ["/sign-in", "/sign-up", "/forgot-password", "/new-password", "/verify-email", "/verify-pin"],
@@ -37,7 +38,7 @@ export default function Sidebar() {
   const location = useLocation();
   const [activeIndex, setActiveIndex] = useState(null);
   const { toggleSidebar } = useSidebarContext();
-  const { user } = useAuth();
+  const { permissionMap } = useAuth();
 
   const menuRef = useRef(null);
   const [leftPos, setLeftPos] = useState(0);
@@ -47,22 +48,40 @@ export default function Sidebar() {
   const scrollStep = 150;
   const buffer = -80;
 
-  const normalizeRole = (role) => String(role || "").trim().toUpperCase();
-  const currentRole = normalizeRole(user?.role);
-  const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(currentRole);
-  const isManager = currentRole === "MANAGER";
-  const isTrainer = currentRole === "TRAINER";
-  const isUser = currentRole === "USER";
-
-  const hideWorkoutAndDiet = isAdmin || isManager;
-  const hideStep = hideWorkoutAndDiet;
-  const hideGoals = hideWorkoutAndDiet;
-  const hideProgress = hideWorkoutAndDiet;
-  const hideDiet = hideWorkoutAndDiet;
-  const hideWorkout = hideWorkoutAndDiet;
-  const showSettings = !isUser;
-  const showTrainerUsersOnly = isTrainer;
-  const showCreateWorkout = isTrainer;
+  const canView = (pageKey) => canAccess(permissionMap, pageKey, "view");
+  const visibleSettingsItems = [
+    { key: "employees", label: "Employees", path: "/employees" },
+    { key: "users", label: "Users", path: "/users" },
+    { key: "headoffice", label: "Head Office", path: "/headoffice", section: true },
+    { key: "branches", label: "Branches", path: "/branches" },
+    { key: "departments", label: "Departments", path: "/departments" },
+    { key: "designations", label: "Designations", path: "/designations" },
+    { key: "teams", label: "Teams", path: "/teams" },
+    { key: "role-permissions", label: "Role Permissions", path: "/role-permissions" },
+  ].filter((item) => canView(item.key));
+  const visibleWorkoutItems = [
+    { key: "workout-type", label: "Workout Type Master", path: "/workout-type" },
+    { key: "body-part", label: "Body Part Master", path: "/body-part" },
+    { key: "exercise-master", label: "Exercise Master", path: "/exercise-master" },
+    { key: "workout-plan", label: "Workout Plan Master", path: "/workout-plan" },
+    { key: "workout-detail", label: "Workout Detail", path: "/workout-detail" },
+  ].filter((item) => canView(item.key));
+  const visibleDietItems = [
+    { key: "dietplan", label: "Diet Menu", path: "/dietplan" },
+    { key: "diet-detail", label: "Diet Detail", path: "/diet-detail" },
+  ].filter((item) => canView(item.key));
+  const showSettings = visibleSettingsItems.length > 0;
+  const showWorkout = visibleWorkoutItems.length > 0;
+  const showDiet = visibleDietItems.length > 0;
+  const visibleScheduleItems = [
+    { key: "trainer-duty-schedule", label: "Trainer Duty Schedule", path: "/trainer-duty-schedule" },
+    { key: "user-workout-schedule", label: "User Workout Schedule", path: "/user-workout-schedule" },
+    { key: "my-schedule", label: "My Schedule", path: "/my-schedule" },
+  ].filter((item) => canView(item.key));
+  const showCalendar = visibleScheduleItems.length > 0;
+  const showGoals = canView("goals");
+  const showProgress = canView("progress");
+  const showProfile = canView("profile");
 
   useEffect(() => {
     const currentPath = location.pathname;
@@ -159,44 +178,52 @@ export default function Sidebar() {
                 <i className="fa fa-angle-right menu-dropwdown"></i>
               </Link>
               <ul className="submenu-list">
-                {!showTrainerUsersOnly && (
-                  <>
-                    <li>
-                      <Link to="/employees">Employees</Link>
-                    </li>
-                    <li>
-                      <Link to="/users">Users</Link>
-                    </li>
-                    <li className="submenu-section-label">Management</li>
-                    <li>
-                      <Link to="/headoffice">Head Office</Link>
-                    </li>
-                    <li>
-                      <Link to="/branches">Branches</Link>
-                    </li>
-                    <li>
-                      <Link to="/departments">Departments</Link>
-                    </li>
-                    <li>
-                      <Link to="/designations">Designations</Link>
-                    </li>
-                    <li>
-                      <Link to="/teams">Teams</Link>
-                    </li>
-                  </>
+                {visibleSettingsItems.some((item) => item.key === "employees") && (
+                  <li>
+                    <Link to="/employees">Employees</Link>
+                  </li>
                 )}
-                {showTrainerUsersOnly && (
-                  <>
-                    <li>
-                      <Link to="/users">Users</Link>
-                    </li>
-                  </>
+                {visibleSettingsItems.some((item) => item.key === "users") && (
+                  <li>
+                    <Link to="/users">Users</Link>
+                  </li>
+                )}
+                {visibleSettingsItems.some((item) => item.section) && <li className="submenu-section-label">Management</li>}
+                {visibleSettingsItems.some((item) => item.key === "headoffice") && (
+                  <li>
+                    <Link to="/headoffice">Head Office</Link>
+                  </li>
+                )}
+                {visibleSettingsItems.some((item) => item.key === "branches") && (
+                  <li>
+                    <Link to="/branches">Branches</Link>
+                  </li>
+                )}
+                {visibleSettingsItems.some((item) => item.key === "departments") && (
+                  <li>
+                    <Link to="/departments">Departments</Link>
+                  </li>
+                )}
+                {visibleSettingsItems.some((item) => item.key === "designations") && (
+                  <li>
+                    <Link to="/designations">Designations</Link>
+                  </li>
+                )}
+                {visibleSettingsItems.some((item) => item.key === "teams") && (
+                  <li>
+                    <Link to="/teams">Teams</Link>
+                  </li>
+                )}
+                {visibleSettingsItems.some((item) => item.key === "role-permissions") && (
+                  <li>
+                    <Link to="/role-permissions">Role Permissions</Link>
+                  </li>
                 )}
               </ul>
             </li>
           )}
 
-          {!hideWorkout && (
+          {showWorkout && (
             <li onClick={() => handleMenuClick(2)} className={`menu-item ${activeIndex === 2 ? "active" : ""}`}>
               <Link to="#" onClick={(e) => e.preventDefault()}>
                 <div className="icon-item">
@@ -206,49 +233,55 @@ export default function Sidebar() {
                 <i className="fa fa-angle-right menu-dropwdown"></i>
               </Link>
               <ul className="submenu-list">
-                <li>
-                  <Link to="/workout-filter">Workout Filter</Link>
-                </li>
-                <li>
-                  <Link to="/workout-topfilter">Workout Top Filter</Link>
-                </li>
-                <li>
-                  <Link to="/upperbody-workout">Body workout</Link>
-                </li>
-                {showCreateWorkout && (
-                  <li>
-                    <Link to="/create-workout">Create workout</Link>
+                {visibleWorkoutItems.map((item) => (
+                  <li key={item.key}>
+                    <Link to={item.path}>{item.label}</Link>
                   </li>
-                )}
-                <li>
-                  <Link to="/workout-summary">Workout Summary</Link>
-                </li>
+                ))}
               </ul>
             </li>
           )}
 
-          {!hideDiet && (
+          {showDiet && (
             <li onClick={() => handleMenuClick(3)} className={`menu-item ${activeIndex === 3 ? "active" : ""}`}>
               <Link to="#" onClick={(e) => e.preventDefault()}>
                 <div className="icon-item">
                   <IconCalendar />
                 </div>
-                <span>Diet Plan</span>
+                <span>Diet Menu</span>
                 <i className="fa fa-angle-right menu-dropwdown"></i>
               </Link>
               <ul className="submenu-list">
-                <li>
-                  <Link to="/dietplan">Diet Menu</Link>
-                </li>
-                <li>
-                  <Link to="/diet-detail">Diet Detail</Link>
-                </li>
+                {visibleDietItems.map((item) => (
+                  <li key={item.key}>
+                    <Link to={item.path}>{item.label}</Link>
+                  </li>
+                ))}
               </ul>
             </li>
           )}
 
-          {!hideGoals && (
+          {showCalendar && (
             <li onClick={() => handleMenuClick(4)} className={`menu-item ${activeIndex === 4 ? "active" : ""}`}>
+              <Link to="#" onClick={(e) => e.preventDefault()}>
+                <div className="icon-item">
+                  <IconCalendarEvent />
+                </div>
+                <span>Schedule</span>
+                <i className="fa fa-angle-right menu-dropwdown"></i>
+              </Link>
+              <ul className="submenu-list">
+                {visibleScheduleItems.map((item) => (
+                  <li key={item.key}>
+                    <Link to={item.path}>{item.label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          )}
+
+          {showGoals && (
+            <li onClick={() => handleMenuClick(5)} className={`menu-item ${activeIndex === 5 ? "active" : ""}`}>
               <Link to="/goals">
                 <div className="icon-item">
                   <IconTargetArrow />
@@ -258,16 +291,7 @@ export default function Sidebar() {
             </li>
           )}
 
-          <li onClick={() => handleMenuClick(5)} className={`menu-item ${activeIndex === 5 ? "active" : ""}`}>
-            <Link to="/schedule">
-              <div className="icon-item">
-                <IconCalendarEvent />
-              </div>
-              <span>My Schedule</span>
-            </Link>
-          </li>
-
-          {!hideProgress && (
+          {showProgress && (
             <li onClick={() => handleMenuClick(6)} className={`menu-item ${activeIndex === 6 ? "active" : ""}`}>
               <Link to="/progress">
                 <div className="icon-item">
@@ -278,14 +302,16 @@ export default function Sidebar() {
             </li>
           )}
 
-          <li onClick={() => handleMenuClick(7)} className={`menu-item ${activeIndex === 7 ? "active" : ""}`}>
+          {showProfile && (
+            <li onClick={() => handleMenuClick(7)} className={`menu-item ${activeIndex === 7 ? "active" : ""}`}>
             <Link to="/profile">
               <div className="icon-item">
                 <IconLayoutDashboard />
               </div>
               <span>Profile</span>
             </Link>
-          </li>
+            </li>
+          )}
 
           <li onClick={() => handleMenuClick(8)} className={`menu-item ${activeIndex === 8 ? "active" : ""}`}>
             <Link to="#" onClick={(e) => e.preventDefault()}>
@@ -317,7 +343,7 @@ export default function Sidebar() {
             </ul>
           </li>
 
-          {!hideStep && (
+          {canView("onboding-step") && (
             <li onClick={() => handleMenuClick(9)} className={`menu-item ${activeIndex === 9 ? "active" : ""}`}>
               <Link to="/onboding-step">
                 <div className="icon-item">

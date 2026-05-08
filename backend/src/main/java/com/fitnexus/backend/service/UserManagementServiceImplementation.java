@@ -2,9 +2,12 @@ package com.fitnexus.backend.service;
 
 import com.fitnexus.backend.dto.*;
 import com.fitnexus.backend.entity.*;
+import com.fitnexus.backend.exception.InvalidOperationException;
 import com.fitnexus.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +28,8 @@ public class UserManagementServiceImplementation implements UserManagementServic
     private final ManagerRepository managerRepository;
     private final TrainerRepository trainerRepository;
     private final FitnessUserRepository fitnessUserRepository;
+    private final DietPlanRepository dietPlanRepository;
+    private final WorkoutPlanRepository workoutPlanRepository;
     private final PasswordEncoder passwordEncoder;
 
     private int getRoleLevel(Role role) {
@@ -47,6 +52,53 @@ public class UserManagementServiceImplementation implements UserManagementServic
     private Users getAccount(Long userId, String label) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new SecurityException(label + " not found"));
+    }
+
+    private Users getAuthenticatedAccount() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new SecurityException("You are not authenticated");
+        }
+
+        String email = authentication.getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new SecurityException("Authenticated user not found"));
+    }
+
+    private Users getRequesterOrThrow(Long requesterId) {
+        Users requester = getAuthenticatedAccount();
+        if (requesterId != null && !requesterId.equals(requester.getId())) {
+            throw new SecurityException("Requester does not match the authenticated user");
+        }
+        return requester;
+    }
+
+    private void applyHierarchyLinks(Users account, Users creator) {
+        if (account == null || creator == null) {
+            return;
+        }
+
+        switch (account.getRole()) {
+            case ADMIN:
+                account.setAdmin(account);
+                break;
+            case MANAGER:
+                account.setAdmin(creator.getAdmin() != null ? creator.getAdmin() : (creator.getRole() == Role.ADMIN ? creator : null));
+                account.setManager(account);
+                break;
+            case TRAINER:
+                account.setAdmin(creator.getAdmin() != null ? creator.getAdmin() : (creator.getRole() == Role.ADMIN ? creator : null));
+                account.setManager(creator.getManager() != null ? creator.getManager() : (creator.getRole() == Role.MANAGER ? creator : null));
+                account.setTrainer(account);
+                break;
+            case USER:
+                account.setAdmin(creator.getAdmin() != null ? creator.getAdmin() : (creator.getRole() == Role.ADMIN ? creator : null));
+                account.setManager(creator.getManager() != null ? creator.getManager() : (creator.getRole() == Role.MANAGER ? creator : null));
+                account.setTrainer(creator.getTrainer() != null ? creator.getTrainer() : (creator.getRole() == Role.TRAINER ? creator : null));
+                break;
+            default:
+                break;
+        }
     }
 
 
@@ -75,6 +127,7 @@ public class UserManagementServiceImplementation implements UserManagementServic
         account.setCreatedBy(creator);
         account.setIsActive(true);
         account.setIsApproved(true);
+        applyHierarchyLinks(account, creator);
         return account;
     }
 
@@ -303,7 +356,7 @@ public class UserManagementServiceImplementation implements UserManagementServic
 
     @Override
     public List<TrainerResponse> getAllTrainers(Long requesterId) {
-        ensureRequesterCanList(requesterId, Role.TRAINER, "trainers");
+        getRequesterOrThrow(requesterId);
         return trainerRepository.findAll().stream()
                 .map(this::mapTrainerToResponse)
                 .collect(Collectors.toList());
@@ -419,24 +472,37 @@ public class UserManagementServiceImplementation implements UserManagementServic
 
     @Override
     public List<CustomerResponse> getAllCustomers(Long requesterId) {
-        ensureRequesterCanList(requesterId, Role.USER, "customers");
-        return fitnessUserRepository.findAll().stream()
+        Users requester = getRequesterOrThrow(requesterId);
+        return getVisibleCustomersForRequester(requester).stream()
                 .map(this::mapCustomerToResponse)
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public List<CustomerResponse> getCustomersAssignedToTrainer(Long trainerId) {
-        Users account = getAccount(trainerId, "Trainer");
-        if (account.getRole() != Role.TRAINER) {
-            throw new RuntimeException("User is not a Trainer");
-        }
-        Trainer trainer = trainerRepository.findById(trainerId)
-                .orElseThrow(() -> new RuntimeException("Trainer not found"));
-        return fitnessUserRepository.findByAssignedTrainer(trainer).stream()
-                .map(this::mapCustomerToResponse)
-                .collect(Collectors.toList());
-    }
+     @Override
+     public List<CustomerResponse> getCustomersAssignedToTrainer(Long trainerId) {
+         Users requester = getRequesterOrThrow(trainerId);
+         if (requester.getRole() != Role.TRAINER) {
+             throw new SecurityException("You do not have permission to view these users");
+         }
+
+         return java.util.stream.Stream.concat(
+                         fitnessUserRepository.findByAssignedTrainer_Id(requester.getId()).stream(),
+                         java.util.stream.Stream.concat(
+                                 fitnessUserRepository.findByAccount_Trainer_Id(requester.getId()).stream(),
+                                 fitnessUserRepository.findByAccount_CreatedBy_Id(requester.getId()).stream()
+                         )
+                 )
+                 .collect(java.util.stream.Collectors.toMap(
+                         user -> user.getId(),
+                         user -> user,
+                         (left, right) -> left,
+                         java.util.LinkedHashMap::new
+                 ))
+                 .values()
+                 .stream()
+                 .map(this::mapCustomerToResponse)
+                 .collect(Collectors.toList());
+     }
 
     @Override
     public CustomerResponse activateCustomer(Long customerId, Long trainerId) {
@@ -450,8 +516,144 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 .orElseThrow(() -> new RuntimeException("Customer not found"));
         customer.getAccount().setIsActive(true);
         customer.getAccount().setIsApproved(true);
+        customer.getAccount().setAdmin(trainerAccount.getAdmin() != null ? trainerAccount.getAdmin() : (trainerAccount.getRole() == Role.ADMIN ? trainerAccount : null));
+        customer.getAccount().setManager(trainerAccount.getManager() != null ? trainerAccount.getManager() : (trainerAccount.getRole() == Role.MANAGER ? trainerAccount : null));
+        customer.getAccount().setTrainer(trainerAccount);
         customer.setAssignedTrainer(trainer);
         return mapCustomerToResponse(fitnessUserRepository.save(customer));
+    }
+
+    @Override
+    public DietPlan assignDietPlanToUser(Long userId, Long dietPlanId) {
+        Users assigner = getAuthenticatedAccount();
+        if (assigner.getRole() == Role.USER) {
+            throw new SecurityException("You do not have permission to assign a diet plan to this user.");
+        }
+
+        FitnessUser customer = fitnessUserRepository.findById(userId)
+                .orElseThrow(() -> new InvalidOperationException("Customer not found"));
+        Users targetAccount = customer.getAccount();
+        if (targetAccount.getRole() != Role.USER) {
+            throw new SecurityException("You do not have permission to assign a diet plan to this user.");
+        }
+
+        if (!isVisibleToAssigner(assigner, targetAccount)) {
+            throw new SecurityException("You do not have permission to assign a diet plan to this user.");
+        }
+
+        DietPlan dietPlan = dietPlanRepository.findById(dietPlanId)
+                .orElseThrow(() -> new InvalidOperationException("Diet plan not found"));
+        targetAccount.setAssignedDietPlan(dietPlan);
+        fitnessUserRepository.save(customer);
+        return dietPlan;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DietPlan getMyDietPlan() {
+        Users currentUser = getAuthenticatedAccount();
+        DietPlan assignedDietPlan = currentUser.getAssignedDietPlan();
+        if (assignedDietPlan == null || assignedDietPlan.getId() == null) {
+            return null;
+        }
+
+        return dietPlanRepository.findById(assignedDietPlan.getId()).orElse(null);
+    }
+
+    @Override
+    public WorkoutPlan assignWorkoutPlanToUser(Long userId, Long workoutPlanId) {
+        Users assigner = getAuthenticatedAccount();
+        if (assigner.getRole() == Role.USER) {
+            throw new SecurityException("You do not have permission to assign a workout plan to this user.");
+        }
+
+        FitnessUser customer = fitnessUserRepository.findById(userId)
+                .orElseThrow(() -> new InvalidOperationException("Customer not found"));
+        Users targetAccount = customer.getAccount();
+        if (targetAccount.getRole() != Role.USER) {
+            throw new SecurityException("You do not have permission to assign a workout plan to this user.");
+        }
+
+        if (!isVisibleToAssigner(assigner, targetAccount)) {
+            throw new SecurityException("You do not have permission to assign a workout plan to this user.");
+        }
+
+        WorkoutPlan workoutPlan = workoutPlanRepository.findById(workoutPlanId)
+                .orElseThrow(() -> new InvalidOperationException("Workout plan not found"));
+        targetAccount.setAssignedWorkoutPlan(workoutPlan);
+        fitnessUserRepository.save(customer);
+        return workoutPlan;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WorkoutPlan getMyWorkoutPlan() {
+        Users currentUser = getAuthenticatedAccount();
+        WorkoutPlan assignedWorkoutPlan = currentUser.getAssignedWorkoutPlan();
+        if (assignedWorkoutPlan == null || assignedWorkoutPlan.getId() == null) {
+            return null;
+        }
+
+        return workoutPlanRepository.findById(assignedWorkoutPlan.getId()).orElse(null);
+    }
+
+    private List<FitnessUser> getVisibleCustomersForRequester(Users requester) {
+        if (requester == null) {
+            throw new SecurityException("Requester not found");
+        }
+
+        switch (requester.getRole()) {
+            case SUPER_ADMIN:
+                return fitnessUserRepository.findAll();
+            case ADMIN:
+                return fitnessUserRepository.findByAccount_Admin_Id(requester.getId());
+            case MANAGER:
+                return fitnessUserRepository.findByAccount_Manager_Id(requester.getId());
+            case TRAINER:
+                return java.util.stream.Stream.concat(
+                                fitnessUserRepository.findByAssignedTrainer_Id(requester.getId()).stream(),
+                                java.util.stream.Stream.concat(
+                                        fitnessUserRepository.findByAccount_Trainer_Id(requester.getId()).stream(),
+                                        fitnessUserRepository.findByAccount_CreatedBy_Id(requester.getId()).stream()
+                                )
+                        )
+                        .collect(java.util.stream.Collectors.toMap(
+                                user -> user.getId(),
+                                user -> user,
+                                (left, right) -> left,
+                                java.util.LinkedHashMap::new
+                        ))
+                        .values()
+                        .stream()
+                        .toList();
+            default:
+                throw new SecurityException("You do not have permission to view customers");
+        }
+    }
+
+    private boolean isVisibleToAssigner(Users assigner, Users targetAccount) {
+        if (assigner == null || targetAccount == null) {
+            return false;
+        }
+
+        if (assigner.getRole() == Role.SUPER_ADMIN) {
+            return true;
+        }
+
+        if (targetAccount.getRole() != Role.USER) {
+            return false;
+        }
+
+        switch (assigner.getRole()) {
+            case ADMIN:
+                return targetAccount.getAdmin() != null && targetAccount.getAdmin().getId().equals(assigner.getId());
+            case MANAGER:
+                return targetAccount.getManager() != null && targetAccount.getManager().getId().equals(assigner.getId());
+            case TRAINER:
+                return targetAccount.getTrainer() != null && targetAccount.getTrainer().getId().equals(assigner.getId());
+            default:
+                return false;
+        }
     }
 
     private void copyAdminFields(Admin admin, CreateAdminRequest request) {

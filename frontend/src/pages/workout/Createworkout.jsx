@@ -417,7 +417,7 @@ export default function Createworkout() {
                 </Modal>
 
                 {/* Warm-up Edit Modal */}
-                <Modal show={showEdit} onHide={() => setShowEdit(false)} centered>
+                                        <Modal show={showEdit} onHide={() => setShowEdit(false)} centered size="lg">
                     <Modal.Body>
                         <span onClick={() => setShowEdit(false)} className='close-modal'>
                             <IconX/>
@@ -490,7 +490,7 @@ export default function Createworkout() {
                 </Modal>
 
                 {/* Schedule Workout Modal */}
-                <Modal show={showSchedule} onHide={() => setShowSchedule(false)} centered>
+                                        <Modal show={showSchedule} onHide={() => setShowSchedule(false)} centered size="lg">
                     <Modal.Body>
                         <span onClick={() => setShowSchedule(false)} className="close-modal">
                             <IconX/>

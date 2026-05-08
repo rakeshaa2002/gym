@@ -12,15 +12,27 @@ import java.util.Optional;
 @Repository
 public interface FitnessUserRepository extends JpaRepository<FitnessUser, Long> {
 
-    @EntityGraph(attributePaths = {"account", "account.createdBy", "assignedTrainer", "assignedTrainer.account"})
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
     Optional<FitnessUser> findById(Long id);
 
-    @EntityGraph(attributePaths = {"account", "account.createdBy", "assignedTrainer", "assignedTrainer.account"})
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
     List<FitnessUser> findAll();
+
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
+    List<FitnessUser> findByAccount_Admin_Id(Long adminId);
+
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
+    List<FitnessUser> findByAccount_Manager_Id(Long managerId);
+
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
+    List<FitnessUser> findByAccount_Trainer_Id(Long trainerId);
 
     List<FitnessUser> findByAssignedTrainer(Trainer assignedTrainer);
 
     List<FitnessUser> findByAssignedTrainer_Id(Long trainerId);
+
+    @EntityGraph(attributePaths = {"account", "account.createdBy", "account.admin", "account.manager", "account.trainer", "account.assignedDietPlan", "account.assignedWorkoutPlan", "assignedTrainer", "assignedTrainer.account"})
+    List<FitnessUser> findByAccount_CreatedBy_Id(Long createdById);
 
     List<FitnessUser> findByAccount_IsActive(Boolean isActive);
 

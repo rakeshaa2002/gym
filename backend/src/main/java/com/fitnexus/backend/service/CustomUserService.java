@@ -5,6 +5,7 @@ import com.fitnexus.backend.repository.UserRepository;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
@@ -23,14 +24,14 @@ public class CustomUserService implements UserDetailsService {
 
         Optional<Users> users = userRepository.findByEmail(email);
 
-        if (users == null) {
+        if (users.isEmpty()) {
             throw new UsernameNotFoundException("Users not found");
         }
 
         return new org.springframework.security.core.userdetails.User(
                 users.get().getEmail(),
                 users.get().getPassword(),
-                Collections.emptyList() // later we add roles
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + users.get().getRole().name()))
         );
     }
 }

@@ -9,6 +9,7 @@ import {
   deleteTeam,
   getAllDepartments
 } from "../../api/orgHierarchyApi";
+import { getTrainers } from "../../api/userAdminApi";
 import { extractApiErrorMessage } from "../../utils/errorMessage";
 import { useAuth } from "../../context/AuthContext";
 import WizardPopup from "../../components/WizardPopup";
@@ -17,6 +18,7 @@ const EMPTY_FORM = {
   name: "",
   departmentId: "",
   description: "",
+  teamLead: "",
   status: "ACTIVE",
 };
 
@@ -25,14 +27,69 @@ const TEAM_STEPS = [
   { key: "description", label: "Description" },
 ];
 
+function getTeamLeadValue(team) {
+  const rawLead =
+    team?.teamLead ??
+    team?.teamLeadName ??
+    team?.trainer ??
+    team?.trainerName ??
+    "";
+
+  if (rawLead && typeof rawLead === "object") {
+    return String(rawLead.name ?? rawLead.fullName ?? rawLead.label ?? "").trim();
+  }
+
+  return String(rawLead || "").trim();
+}
+
+function buildTeamLeadToken(trainer) {
+  if (!trainer) return "";
+
+  const id = String(trainer?.id ?? "").trim();
+  const name =
+    [trainer?.firstName, trainer?.lastName].filter(Boolean).join(" ") ||
+    trainer?.name ||
+    "";
+
+  if (!id && !name) return "";
+  if (!id) return name.trim();
+  if (!name) return id;
+  return `${id}::${name.trim()}`;
+}
+
+function splitTeamLeadToken(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { id: "", name: "" };
+
+  const [id, ...rest] = raw.split("::");
+  if (rest.length) {
+    return { id: id.trim(), name: rest.join("::").trim() };
+  }
+
+  return { id: "", name: raw };
+}
+
+function getTrainerDisplayLabel(trainer) {
+  if (!trainer) return "";
+
+  const firstLast = [trainer?.firstName, trainer?.lastName].filter(Boolean).join(" ").trim();
+  const fallbackName =
+    String(trainer?.name || trainer?.fullName || trainer?.label || trainer?.email || "").trim();
+
+  return firstLast || fallbackName || `Trainer ${trainer?.id}`;
+}
+
 export default function TeamPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const currentRole = String(currentUser?.role || "").toUpperCase();
+  const currentUserId = currentUser?.userId ?? currentUser?.id ?? localStorage.getItem("userId") ?? null;
 
   const [rows, setRows] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [trainers, setTrainers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [deptLoading, setDeptLoading] = useState(false);
+  const [trainerLoading, setTrainerLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -89,10 +146,24 @@ export default function TeamPage() {
     }
   };
 
+  const loadTrainers = async () => {
+    setTrainerLoading(true);
+    try {
+      const requesterId = currentUserId ? Number(currentUserId) || currentUserId : null;
+      const data = requesterId ? await getTrainers(requesterId) : [];
+      setTrainers(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setTrainers([]);
+    } finally {
+      setTrainerLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
     loadDepartments();
-  }, []);
+    loadTrainers();
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!notice) return;
@@ -102,11 +173,11 @@ export default function TeamPage() {
 
   // ── Authorization Check ───────────────────────────────────────────────────────
 
-  if (!["SUPER_ADMIN", "ADMIN"].includes(currentRole)) {
+  if (!hasPermission("teams")) {
     return (
       <div className="content">
         <div className="alert alert-danger">
-          ⛔ Only Super Admin and Admin can manage Teams
+          ⛔ You do not have permission to manage Teams
         </div>
       </div>
     );
@@ -123,10 +194,21 @@ export default function TeamPage() {
   };
 
   const openEdit = (team) => {
+    const leadToken = String(team?.teamLead || "").trim();
+    const leadParts = splitTeamLeadToken(leadToken);
+    const matchedTrainer =
+      trainers.find((trainer) => String(trainer.id) === leadParts.id) ||
+      trainers.find((trainer) => {
+        const label = [trainer?.firstName, trainer?.lastName].filter(Boolean).join(" ") || trainer?.name || "";
+        return label.trim() === leadParts.name;
+      }) ||
+      null;
+
     setForm({
       name: team?.name || "",
       departmentId: String(team?.departmentId || ""),
       description: team?.description || "",
+      teamLead: matchedTrainer ? buildTeamLeadToken(matchedTrainer) : leadToken,
       status: String(team?.status || "ACTIVE").toUpperCase(),
     });
     setSelectedId(team?.id);
@@ -195,6 +277,7 @@ export default function TeamPage() {
       name: form.name.trim(),
       departmentId: Number(form.departmentId),
       description: form.description?.trim() || null,
+      teamLead: form.teamLead?.trim() || null,
       status: form.status,
     };
 
@@ -277,6 +360,29 @@ export default function TeamPage() {
             <option key={d.id} value={d.id}>{d.name}</option>
           ))}
         </select>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Team Trainer</label>
+        <select
+          className="form-select"
+          value={form.teamLead}
+          onChange={(e) => setForm({ ...form, teamLead: e.target.value })}
+          disabled={trainerLoading}
+        >
+          <option value="">Select Trainer</option>
+          {trainers.map((trainer) => {
+            const label = getTrainerDisplayLabel(trainer);
+            return (
+              <option key={trainer.id} value={buildTeamLeadToken(trainer)}>
+                {label}
+              </option>
+            );
+          })}
+        </select>
+        <small className="text-muted d-block mt-1">
+          Optional: choose the trainer responsible for this team.
+        </small>
       </div>
 
       <div className="col-md-6">
@@ -432,11 +538,23 @@ export default function TeamPage() {
                   ) : (
                     rows.map((team) => {
                       const dept = departments.find(d => d.id === team.departmentId);
+                      const leadToken = splitTeamLeadToken(getTeamLeadValue(team));
+                      const matchedTrainer =
+                        trainers.find((trainer) => String(trainer.id) === leadToken.id) ||
+                        trainers.find((trainer) => {
+                          const label = getTrainerDisplayLabel(trainer);
+                          return label.trim() === leadToken.name;
+                        }) ||
+                        null;
+                      const leadLabel =
+                        getTrainerDisplayLabel(matchedTrainer) ||
+                        leadToken.name ||
+                        "-";
                       return (
                         <tr key={team.id}>
                           <td className="fw-semibold">{team.name}</td>
                           <td>{dept?.name || "-"}</td>
-                          <td>{team.teamLead || "-"}</td>
+                          <td>{leadLabel}</td>
                           <td>
                             <span className="badge bg-primary">{team.memberCount}</span>
                           </td>

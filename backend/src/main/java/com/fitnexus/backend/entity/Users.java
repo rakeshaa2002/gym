@@ -3,7 +3,9 @@ package com.fitnexus.backend.entity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
 
@@ -38,11 +40,45 @@ public class Users {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private Users createdBy;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reports_to_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private Users reportsTo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "admin_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Users admin;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manager_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Users manager;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trainer_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Users trainer;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_diet_plan_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private DietPlan assignedDietPlan;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_workout_plan_id")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private WorkoutPlan assignedWorkoutPlan;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

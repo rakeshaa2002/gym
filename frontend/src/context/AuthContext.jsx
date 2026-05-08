@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { setAccessToken, clearTokens } from "../utils/api";
+import { buildPermissionMap, getDefaultRolePermissions, normalizeRole } from "../config/pagePermissions";
+import { getMyPermissions } from "../api/permissionsApi";
 
 const AuthContext = createContext();
 function clearStoredAuth() {
@@ -37,6 +39,8 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [permissionsLoading, setPermissionsLoading] = useState(true);
+  const [permissionMap, setPermissionMap] = useState({});
 
   useEffect(() => {
     const token = localStorage.getItem("token") || localStorage.getItem("accessToken");
@@ -49,20 +53,62 @@ export function AuthProvider({ children }) {
       setAccessToken(token);
       setIsAuthenticated(true);
       setUser({ email, name, role, userId });
+      setPermissionsLoading(true);
     } else {
       clearStoredAuth();
       setIsAuthenticated(false);
       setUser(null);
+      setPermissionMap({});
+      setPermissionsLoading(false);
     }
 
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPermissions = async () => {
+      if (!isAuthenticated || !user?.role) {
+        setPermissionMap({});
+        setPermissionsLoading(false);
+        return;
+      }
+
+      setPermissionsLoading(true);
+
+      try {
+        const response = await getMyPermissions();
+        if (cancelled) return;
+
+        const permissions = Array.isArray(response?.permissions) ? response.permissions : [];
+        setPermissionMap(buildPermissionMap(permissions));
+      } catch (error) {
+        if (cancelled) return;
+        setPermissionMap(getDefaultRolePermissions(normalizeRole(user.role)));
+        if (import.meta.env.DEV) {
+          console.warn("Falling back to default permissions for role", user.role, error);
+        }
+      } finally {
+        if (!cancelled) {
+          setPermissionsLoading(false);
+        }
+      }
+    };
+
+    loadPermissions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, user?.email, user?.role]);
 
   const login = (userData) => {
     const token = userData.token || userData.accessToken || "";
 
     setUser(userData);
     setIsAuthenticated(true);
+    setPermissionsLoading(true);
 
     setAccessToken(token);
 
@@ -79,6 +125,24 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(false);
 
     clearStoredAuth();
+    setPermissionMap({});
+    setPermissionsLoading(false);
+  };
+
+  const hasPermission = (pageKey, action = "view") => {
+    const permission = permissionMap?.[pageKey];
+    if (!permission) return false;
+
+    switch (String(action || "view").toLowerCase()) {
+      case "create":
+        return Boolean(permission.canCreate);
+      case "edit":
+        return Boolean(permission.canEdit);
+      case "delete":
+        return Boolean(permission.canDelete);
+      default:
+        return Boolean(permission.canView);
+    }
   };
 
   return (
@@ -87,6 +151,9 @@ export function AuthProvider({ children }) {
         isAuthenticated,
         user,
         loading,
+        permissionsLoading,
+        permissionMap,
+        hasPermission,
         login,
         logout,
       }}

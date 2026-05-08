@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -158,6 +159,25 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(
                         HttpStatus.BAD_REQUEST.value(),
                         ex.getMessage(),
+                        LocalDateTime.now().toString(),
+                        request.getDescription(false).replace("uri=", "")
+                ));
+    }
+
+    /**
+     * Handle upload files that exceed configured limits
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<?> handleMaxUploadSizeExceededException(
+            MaxUploadSizeExceededException ex,
+            WebRequest request) {
+
+        log.warn("Upload too large: {}", ex.getMessage());
+
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(new ApiErrorResponse(
+                        HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                        "The uploaded file is too large. Please choose a file smaller than 10 MB.",
                         LocalDateTime.now().toString(),
                         request.getDescription(false).replace("uri=", "")
                 ));

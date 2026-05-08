@@ -6,7 +6,7 @@
             "title": "Dashboard"
         },
         {
-            "to": "/workout-topfilter",
+            "to": "/workout-plan",
             "img": "landing/pages/workout.png",
             "title": "Workout List"
         },
@@ -31,17 +31,17 @@
             "title": "Progress List"
         },
         {
-            "to": "/upperbody-workout",
+            "to": "/workout-detail",
             "img": "landing/pages/body-workout.png",
             "title": "Workout Detail"
         },
         {
-            "to": "/workout-summary",
+            "to": "/exercise-master",
             "img": "landing/pages/workout-summary.png",
             "title": "Workout Summary"
         },
         {
-            "to": "/create-workout",
+            "to": "/workout-plan",
             "img": "landing/pages/create-workout.png",
             "title": "Create Workout"
         }
@@ -53,7 +53,7 @@
             "title": "Workout Reminders"
         },
         {
-            "to": "/upperbody-workout",
+            "to": "/workout-detail",
             "img": "landing/pages/workout-detail.png",
             "title": "Workout Detail"
         },

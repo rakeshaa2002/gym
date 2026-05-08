@@ -1,17 +1,19 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext'; // Adjust path as needed
 import Sidebar from './Sidebar';
 import Header from './Header';
 import MobileBottomNav from './MobileBottomNav';
 import useIsMobile from '../hooks/useIsMobile';
+import { findPageByPath } from '../config/pagePermissions';
 
 export default function ProtectedRoute() {
-    const { isAuthenticated, loading } = useAuth();
+    const { isAuthenticated, loading, permissionsLoading, hasPermission } = useAuth();
     const isMobile = useIsMobile();
+    const location = useLocation();
 
     // Show loading while checking auth
-    if (loading) {
+    if (loading || permissionsLoading) {
         console.log("ProtectedRoute - Still checking authentication...");
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -26,6 +28,11 @@ export default function ProtectedRoute() {
     if (!isAuthenticated) {
         console.warn("ProtectedRoute - Not authenticated, redirecting to /sign-in");
         return <Navigate to="/sign-in" replace />;
+    }
+
+    const currentPage = findPageByPath(location.pathname);
+    if (currentPage && !hasPermission(currentPage.key, "view")) {
+        return <Navigate to="/error-page" replace />;
     }
 
     // If authenticated, render the nested routes

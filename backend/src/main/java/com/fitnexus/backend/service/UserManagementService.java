@@ -1,6 +1,8 @@
 package com.fitnexus.backend.service;
 
 import com.fitnexus.backend.dto.*;
+import com.fitnexus.backend.entity.DietPlan;
+import com.fitnexus.backend.entity.WorkoutPlan;
 import com.fitnexus.backend.entity.Role;
 
 import java.util.List;
@@ -61,6 +63,14 @@ public interface UserManagementService {
     List<CustomerResponse> getCustomersAssignedToTrainer(Long trainerId);
 
     CustomerResponse activateCustomer(Long customerId, Long trainerId);
+
+    DietPlan assignDietPlanToUser(Long userId, Long dietPlanId);
+
+    DietPlan getMyDietPlan();
+
+    WorkoutPlan assignWorkoutPlanToUser(Long userId, Long workoutPlanId);
+
+    WorkoutPlan getMyWorkoutPlan();
 
     List<ReportingOptionResponse> getReportingOptions(Role targetRole, Long branchId, Long requesterId);
 }

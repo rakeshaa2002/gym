@@ -12,13 +12,10 @@ import { extractApiErrorMessage } from "../../utils/errorMessage";
 import { useAuth } from "../../context/AuthContext";
 import WizardPopup from "../../components/WizardPopup";
 
-const LEVEL_OPTIONS = ["JUNIOR", "SENIOR", "LEAD", "MANAGER", "HEAD"];
-
 const EMPTY_FORM = {
   name: "",
   departmentId: "",
   description: "",
-  level: "JUNIOR",
   salary: 0,
   status: "ACTIVE",
 };
@@ -30,7 +27,7 @@ const DESIGNATION_STEPS = [
 ];
 
 export default function DesignationPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const currentRole = String(currentUser?.role || "").toUpperCase();
 
   const [rows, setRows] = useState([]);
@@ -93,10 +90,10 @@ export default function DesignationPage() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  if (!["SUPER_ADMIN", "ADMIN"].includes(currentRole)) {
+  if (!hasPermission("designations")) {
     return (
       <div className="content">
-        <div className="alert alert-danger">Only Super Admin and Admin can manage Designations</div>
+        <div className="alert alert-danger">You do not have permission to manage Designations</div>
       </div>
     );
   }
@@ -116,7 +113,6 @@ export default function DesignationPage() {
       name: desig?.name || "",
       departmentId: String(desig?.departmentId || ""),
       description: desig?.description || "",
-      level: desig?.level || "JUNIOR",
       salary: desig?.salary || 0,
       status: String(desig?.status || "ACTIVE").toUpperCase(),
     });
@@ -189,7 +185,6 @@ export default function DesignationPage() {
       name: form.name.trim(),
       departmentId: Number(form.departmentId),
       description: form.description?.trim() || null,
-      level: form.level,
       salary: Number(form.salary) || 0,
       status: form.status,
     };
@@ -271,21 +266,6 @@ export default function DesignationPage() {
           {departments.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="col-md-6">
-        <label className="form-label">Level</label>
-        <select
-          className="form-select"
-          value={form.level}
-          onChange={(e) => setForm({ ...form, level: e.target.value })}
-        >
-          {LEVEL_OPTIONS.map((level) => (
-            <option key={level} value={level}>
-              {level}
             </option>
           ))}
         </select>

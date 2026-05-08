@@ -24,7 +24,7 @@ const HEAD_OFFICE_STEPS = [
 ];
 
 export default function HeadOfficePage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const currentRole = String(currentUser?.role || "").toUpperCase();
 
   const [rows, setRows] = useState([]);
@@ -77,11 +77,11 @@ export default function HeadOfficePage() {
 
   // ── Authorization Check ───────────────────────────────────────────────────────
 
-  if (currentRole !== "SUPER_ADMIN") {
+  if (!hasPermission("headoffice")) {
     return (
       <div className="content">
         <div className="alert alert-danger">
-          ⛔ Only Super Admin can manage Head Offices
+          ⛔ You do not have permission to manage Head Offices
         </div>
       </div>
     );

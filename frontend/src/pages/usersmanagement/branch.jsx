@@ -32,7 +32,7 @@ const BRANCH_STEPS = [
 ];
 
 export default function BranchPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const currentRole = String(currentUser?.role || "").toUpperCase();
   const [rows, setRows] = useState([]);
   const [headOffices, setHeadOffices] = useState([]);
@@ -112,11 +112,11 @@ export default function BranchPage() {
 
   // ── Authorization Check ───────────────────────────────────────────────────────
 
-  if (!["SUPER_ADMIN", "ADMIN"].includes(currentRole)) {
+  if (!hasPermission("branches")) {
     return (
       <div className="content">
         <div className="alert alert-danger">
-          ⛔ Only Super Admin and Admin can manage Branches
+          ⛔ You do not have permission to manage Branches
         </div>
       </div>
     );

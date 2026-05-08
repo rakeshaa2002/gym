@@ -224,7 +224,7 @@ export default function Index() {
                                         <Card>
                                             <Card.Header className="d-flex justify-content-between">
                                                 <h4>Popular Workouts</h4>
-                                                <Link to="/workout-filter" className="text-primary fs-6 fw-bold">
+                                                <Link to="/workout-plan" className="text-primary fs-6 fw-bold">
                                                     See more                                                    
                                                     <IconArrowUpRight className='fs-4 lh-1 align-middle'/>
                                                 </Link>
@@ -237,12 +237,12 @@ export default function Index() {
                                                                 <Link to="#" onClick={(e) => e.preventDefault()} className="btn-wishlist">                                                                   
                                                                     <IconHeartFilled/>                                      
                                                                 </Link>
-                                                                <Link to="/upperbody-workout">
+                                                                <Link to="/workout-detail">
                                                                     <img src={workou1} alt="" className="w-100" />
                                                                 </Link>
                                                             </div>
                                                             <div className="workout-detail">
-                                                                <Link to="/upperbody-workout">
+                                                                <Link to="/workout-detail">
                                                                     <h5 className="fw-semibold mb-2">Piriformis Stretch</h5>
                                                                 </Link>
                                                                 <h6 className="fw-semibold">
@@ -261,12 +261,12 @@ export default function Index() {
                                                                 <Link to="#" onClick={(e) => e.preventDefault()} className="btn-wishlist">
                                                                     <IconHeartFilled/>                                                                   
                                                                 </Link>
-                                                                <Link to="/upperbody-workout">
+                                                                <Link to="/workout-detail">
                                                                     <img src={workou3} alt="" className="w-100" />
                                                                 </Link>
                                                             </div>
                                                             <div className="workout-detail">
-                                                                <Link to="/upperbody-workout">
+                                                                <Link to="/workout-detail">
                                                                     <h5 className="fw-semibold mb-2">Frankensteins</h5>
                                                                 </Link>
                                                                 <h6 className="fw-semibold">
@@ -352,7 +352,7 @@ export default function Index() {
                                         <Card>
                                             <Card.Header className="d-flex justify-content-between">
                                                 <h4 className="fw-semibold">Categories</h4>
-                                                <Link to="/workout-filter" className="text-primary fs-6 fw-bold">
+                                                <Link to="/workout-plan" className="text-primary fs-6 fw-bold">
                                                     See more 
                                                     <IconArrowUpRight className='fs-4 lh-1 align-middle'/>                                                   
                                                 </Link>
