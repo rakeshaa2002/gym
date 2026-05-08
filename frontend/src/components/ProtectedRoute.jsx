@@ -3,9 +3,12 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext'; // Adjust path as needed
 import Sidebar from './Sidebar';
 import Header from './Header';
+import MobileBottomNav from './MobileBottomNav';
+import useIsMobile from '../hooks/useIsMobile';
 
 export default function ProtectedRoute() {
     const { isAuthenticated, loading } = useAuth();
+    const isMobile = useIsMobile();
 
     // Show loading while checking auth
     if (loading) {
@@ -34,6 +37,7 @@ export default function ProtectedRoute() {
         <div className="codex-content">
             <Outlet />
         </div>
+        {isMobile ? <MobileBottomNav /> : null}
     </div>
 );
 }

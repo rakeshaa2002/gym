@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Modal, Button, Form } from "react-bootstrap";
+import { Modal, Button } from "react-bootstrap";
 import { IconHome, IconEdit, IconTrash, IconPlus } from "@tabler/icons-react";
 import api from "../../utils/api";
 import {
@@ -20,6 +20,8 @@ import {
   validatePhoneNumber,
 } from "../../utils/phoneUtils";
 import { useAuth } from "../../context/AuthContext";
+import WizardPopup from "../../components/WizardPopup";
+import PhoneField from "../../components/PhoneField";
 import adminAvatar from "/src/assets/images/avtar/profile.png";
 import superAdminAvatar from "/src/assets/images/avtar/profile-img.png";
 import userAvatar from "/src/assets/images/avtar/samantha-lee.png";
@@ -32,6 +34,14 @@ const ROLE_OPTIONS = [
   { value: "MANAGER", label: "Manager" },
   { value: "TRAINER", label: "Trainer" },
   { value: "USER", label: "User" },
+];
+
+const USER_MODAL_STEPS = [
+  { key: "identity", label: "Identity" },
+  { key: "organization", label: "Organization" },
+  { key: "details", label: "Role Details" },
+  { key: "personal", label: "Personal Details" },
+  { key: "documents", label: "Documents" },
 ];
 
 const ROLE_COLORS = {
@@ -413,8 +423,8 @@ function getActiveByIds(list) {
 
 function SectionHeader({ label }) {
   return (
-    <div className="col-12 mt-4">
-      <h6 className="mb-3 text-primary">{label}</h6>
+    <div className="col-12 avm-section-col">
+      <p className="avm-section-title">{label}</p>
     </div>
   );
 }
@@ -571,6 +581,13 @@ export default function User() {
   }, [displayedRows]);
 
   const totalRoles = useMemo(() => Object.keys(roleCounts).length, [roleCounts]);
+  const modalStepIndex = useMemo(() => {
+    const index = USER_MODAL_STEPS.findIndex((item) => item.key === modalTab);
+    return index >= 0 ? index : 0;
+  }, [modalTab]);
+  const modalStepCount = USER_MODAL_STEPS.length;
+  const isLastModalStep = modalStepIndex === modalStepCount - 1;
+
   const loadOrgData = async () => {
     setOrgLoading(true);
     try {
@@ -841,6 +858,26 @@ export default function User() {
     setCountrySearch("");
     setCountryDropdownOpen(false);
     setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setModalError("");
+    setModalTab("identity");
+  };
+
+  const goToNextModalStep = () => {
+    setModalError("");
+    if (modalStepIndex < modalStepCount - 1) {
+      setModalTab(USER_MODAL_STEPS[modalStepIndex + 1].key);
+    }
+  };
+
+  const goToPreviousModalStep = () => {
+    setModalError("");
+    if (modalStepIndex > 0) {
+      setModalTab(USER_MODAL_STEPS[modalStepIndex - 1].key);
+    }
   };
 
   const buildSharedPayload = () => {
@@ -1258,8 +1295,7 @@ export default function User() {
     return null;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setModalError("");
 
     const validationMessage = validateForm();
@@ -1463,27 +1499,6 @@ export default function User() {
           {viewMode === "users" ? "Add User" : "Add Employee"}
         </button>
       </div>
-    </div>
-  );
-
-  const renderTabs = () => (
-    <div className="d-flex gap-2 mb-3 flex-wrap">
-      {[
-        ["identity", "Identity"],
-        ["organization", "Organization"],
-        ["details", "Role Details"],
-        ["personal", "Personal Details"],
-        ["documents", "Documents"],
-      ].map(([key, label]) => (
-        <Button
-          key={key}
-          type="button"
-          variant={modalTab === key ? "primary" : "light"}
-          onClick={() => setModalTab(key)}
-        >
-          {label}
-        </Button>
-      ))}
     </div>
   );
 
@@ -1907,8 +1922,6 @@ export default function User() {
       }
     };
 
-    const uploadHelpText = "Accepted: PDF, JPG, JPEG, PNG, WEBP. Max size: 10 MB.";
-
     const renderFileUpload = (label, fieldName, accept = ".pdf,.jpg,.jpeg,.png,.webp") => {
       const value = form[fieldName];
       return (
@@ -1921,7 +1934,6 @@ export default function User() {
             disabled={uploadingField === fieldName}
             onChange={(event) => uploadDocument(event, fieldName)}
           />
-          <small className="text-muted d-block mt-1">{uploadHelpText}</small>
           <small className="text-muted d-block mt-1">
             {uploadingField === fieldName
               ? "Uploading..."
@@ -1931,7 +1943,7 @@ export default function User() {
                     View uploaded file
                   </a>
                 )
-                : "No file uploaded"}
+                : "Upload the file"}
           </small>
         </div>
       );
@@ -1940,6 +1952,11 @@ export default function User() {
     return (
       <div className="row g-3">
         <SectionHeader label="Identity Documents" />
+        <div className="col-12">
+          <small className="text-muted d-block">
+            Accepted: PDF, JPG, JPEG, PNG, WEBP. Max size: 10 MB.
+          </small>
+        </div>
         <div className="col-md-6"><label className="form-label">PAN Number</label><input className="form-control" value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })} /></div>
         <div className="col-md-6"><label className="form-label">Aadhaar Number</label><input className="form-control" value={form.aadharNumber} onChange={(e) => setForm({ ...form, aadharNumber: e.target.value.replace(/\D/g, "") })} /></div>
         {renderFileUpload("Candidate Photo", "candidatePhotoPath", "image/*")}
@@ -2199,50 +2216,13 @@ export default function User() {
         </div>
 
         <div className="col-md-6">
-          <label className="form-label">Phone</label>
-          <div className="input-group">
-            <div className="position-relative" ref={countryDropdownRef}>
-              <button
-                type="button"
-                className="btn btn-outline-secondary dropdown-toggle"
-                onClick={() => setCountryDropdownOpen((value) => !value)}
-              >
-                {ensureCountryCodeValue(form.countryCode)}
-              </button>
-              {countryDropdownOpen && (
-                <div
-                  className="dropdown-menu show p-2"
-                  style={{ width: 280, maxHeight: 280, overflowY: "auto" }}
-                >
-                  <input
-                    className="form-control form-control-sm mb-2"
-                    value={countrySearch}
-                    onChange={(e) => setCountrySearch(e.target.value)}
-                    placeholder="Search country code"
-                  />
-                  {countryOptions.map((opt) => (
-                    <button
-                      key={`${opt.value}-${opt.label}`}
-                      type="button"
-                      className="dropdown-item"
-                      onClick={() => {
-                        setForm({ ...form, countryCode: opt.value });
-                        setCountryDropdownOpen(false);
-                        setCountrySearch("");
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <input
-              className="form-control"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "") })}
-            />
-          </div>
+          <PhoneField
+            id="employeePhone"
+            label="Phone"
+            countryCode={form.countryCode}
+            value={form.phone}
+            onChange={({ countryCode, phone }) => setForm({ ...form, countryCode, phone })}
+          />
         </div>
 
         <div className="col-md-6">
@@ -2253,50 +2233,33 @@ export default function User() {
             onChange={(e) => setForm({ ...form, employeeCode: e.target.value })}
           />
         </div>
-
-        <div className="col-md-12">
-          <div className="alert alert-info mb-0">
-            {currentRole === "SUPER_ADMIN" && "Super Admin can create and manage Admin, Manager, Trainer, and User records. Same-level Super Admin records are hidden and blocked."}
-            {currentRole === "ADMIN" && "Admin can create and manage Manager, Trainer, and User records from this page."}
-            {currentRole === "MANAGER" && "Manager can create and manage Trainer and User records from this page."}
-            {currentRole === "TRAINER" && "Trainer can create User records from this page."}
-            {!["SUPER_ADMIN", "ADMIN", "MANAGER", "TRAINER"].includes(currentRole) &&
-              "This page is read-only for your current role."}
-          </div>
-        </div>
       </div>
     );
   };
 
   const renderUserModal = () =>
     showModal && (
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="xl" centered>
-        <Form onSubmit={handleSubmit}>
-          <Modal.Header closeButton>
-            <Modal.Title>{isEdit ? `Edit ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}` : `Add ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}`}</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            {modalError && <div className="alert alert-danger">{modalError}</div>}
+      <WizardPopup
+        open={showModal}
+        title={isEdit ? `Edit ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}` : `Add ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}`}
+        steps={USER_MODAL_STEPS.map((item) => item.label)}
+        step={modalStepIndex}
+        onClose={closeModal}
+        onBack={goToPreviousModalStep}
+        onNext={goToNextModalStep}
+        onSubmit={handleSubmit}
+        submitLabel={saving ? "Saving..." : "Save Changes"}
+        modalWidth="680px"
+        disabled={saving}
+      >
+        {modalError && <div className="alert alert-danger">{modalError}</div>}
 
-            {renderTabs()}
-
-            {modalTab === "identity" && renderIdentityFields()}
-            {modalTab === "organization" && renderOrgFields()}
-            {modalTab === "details" && renderRoleSpecificFields()}
-            {modalTab === "personal" && renderEmployeePersonalFields()}
-            {modalTab === "documents" && renderEmployeeDocumentFields()}
-          </Modal.Body>
-
-          <Modal.Footer>
-            <Button variant="light" onClick={() => setShowModal(false)} type="button">
-              Cancel
-            </Button>
-            <Button variant="primary" type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save Changes"}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
+        {modalTab === "identity" && renderIdentityFields()}
+        {modalTab === "organization" && renderOrgFields()}
+        {modalTab === "details" && renderRoleSpecificFields()}
+        {modalTab === "personal" && renderEmployeePersonalFields()}
+        {modalTab === "documents" && renderEmployeeDocumentFields()}
+      </WizardPopup>
     );
 
   const renderDeleteModal = () =>

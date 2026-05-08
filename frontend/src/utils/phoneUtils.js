@@ -25,6 +25,41 @@ export function getCountryDisplayMaxLength(value) {
   return option?.maxLength || 10;
 }
 
+export function splitPhoneWithCountryCode(value, fallbackCountryCode = "+91") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return { countryCode: ensureCountryCodeValue(fallbackCountryCode), phone: "" };
+  }
+
+  const normalized = raw.replace(/[\s()-]/g, "");
+  const sortedOptions = [...COUNTRY_CODE_OPTIONS].sort((a, b) => b.value.length - a.value.length);
+  const fullMatch = sortedOptions.find((opt) => normalized.startsWith(opt.value));
+  if (fullMatch) {
+    return {
+      countryCode: fullMatch.value,
+      phone: normalized.slice(fullMatch.value.length).replace(/\D/g, ""),
+    };
+  }
+
+  const numeric = normalized.replace(/^\+/, "");
+  const numericMatch = sortedOptions.find((opt) => {
+    const digits = opt.value.replace(/^\+/, "");
+    return numeric.startsWith(digits);
+  });
+  if (numericMatch) {
+    const digits = numericMatch.value.replace(/^\+/, "");
+    return {
+      countryCode: numericMatch.value,
+      phone: numeric.slice(digits.length).replace(/\D/g, ""),
+    };
+  }
+
+  return {
+    countryCode: ensureCountryCodeValue(fallbackCountryCode),
+    phone: normalized.replace(/\D/g, ""),
+  };
+}
+
 export function sanitizePhoneDigits(value, maxLength, allowedLengths = []) {
   const digits = String(value || "").replace(/\D/g, "");
   const length = maxLength || (allowedLengths.length ? Math.max(...allowedLengths) : digits.length);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { IconHome, IconEdit, IconTrash, IconPlus } from "@tabler/icons-react";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../../api/orgHierarchyApi";
 import { extractApiErrorMessage } from "../../utils/errorMessage";
 import { useAuth } from "../../context/AuthContext";
+import WizardPopup from "../../components/WizardPopup";
 
 const EMPTY_FORM = {
   name: "",
@@ -18,6 +19,11 @@ const EMPTY_FORM = {
   description: "",
   status: "ACTIVE",
 };
+
+const DEPARTMENT_STEPS = [
+  { key: "basic", label: "Basic Info" },
+  { key: "details", label: "Details" },
+];
 
 export default function DepartmentPage() {
   const { user: currentUser } = useAuth();
@@ -35,9 +41,16 @@ export default function DepartmentPage() {
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [selectedId, setSelectedId] = useState(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [modalError, setModalError] = useState("");
+  const [modalTab, setModalTab] = useState("basic");
+
+  const modalStepIndex = useMemo(() => {
+    const index = DEPARTMENT_STEPS.findIndex((item) => item.key === modalTab);
+    return index >= 0 ? index : 0;
+  }, [modalTab]);
+
+  const modalStepCount = DEPARTMENT_STEPS.length;
 
   const loadData = async () => {
     setLoading(true);
@@ -87,10 +100,13 @@ export default function DepartmentPage() {
     );
   }
 
+  // ── Modal open/close ──────────────────────────────────────────────────────────
+
   const openAdd = () => {
     setForm({ ...EMPTY_FORM, branchId: currentRole === "ADMIN" ? String(currentUser?.branchId) : "" });
     setIsEdit(false);
     setModalError("");
+    setModalTab("basic");
     setShowModal(true);
   };
 
@@ -104,14 +120,64 @@ export default function DepartmentPage() {
     setSelectedId(dept?.id);
     setIsEdit(true);
     setModalError("");
+    setModalTab("basic");
     setShowModal(true);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const closeModal = () => {
+    setShowModal(false);
     setModalError("");
-    if (!form.name?.trim()) return setModalError("Department name is required");
-    if (!form.branchId) return setModalError("Branch is required");
+    setModalTab("basic");
+  };
+
+  const goToNextModalStep = () => {
+    setModalError("");
+    
+    // Validate current step before proceeding
+    if (modalTab === "basic") {
+      if (!form.name?.trim()) {
+        setModalError("Department name is required");
+        return;
+      }
+      if (!form.branchId) {
+        setModalError("Branch is required");
+        return;
+      }
+    }
+    
+    if (modalStepIndex < modalStepCount - 1) {
+      setModalTab(DEPARTMENT_STEPS[modalStepIndex + 1].key);
+    }
+  };
+
+  const goToPreviousModalStep = () => {
+    setModalError("");
+    if (modalStepIndex > 0) {
+      setModalTab(DEPARTMENT_STEPS[modalStepIndex - 1].key);
+    }
+  };
+
+  // ── Form submit ───────────────────────────────────────────────────────────────
+
+  const validateForm = () => {
+    if (!form.name?.trim()) {
+      return "Department name is required";
+    }
+    if (!form.branchId) {
+      return "Branch is required";
+    }
+    return null;
+  };
+
+  const handleSubmit = async () => {
+    setModalError("");
+
+    const validationMessage = validateForm();
+    if (validationMessage) {
+      setModalError(validationMessage);
+      setModalTab("basic");
+      return;
+    }
 
     const payload = {
       name: form.name.trim(),
@@ -129,31 +195,31 @@ export default function DepartmentPage() {
         await createDepartment(payload);
         setNotice("Department added successfully");
       }
-      setShowModal(false);
+      closeModal();
       setForm(EMPTY_FORM);
       setSelectedId(null);
       await loadData();
-    } catch (e2) {
-      setModalError(extractApiErrorMessage(e2, "Operation failed"));
+    } catch (e) {
+      setModalError(extractApiErrorMessage(e, "Operation failed"));
     } finally {
       setSaving(false);
     }
   };
 
+  // ── Delete ────────────────────────────────────────────────────────────────────
+
   const confirmDelete = (id) => {
-    setDeleteId(id);
-    setShowDeleteModal(true);
+    setDeleteTarget(id);
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
+    if (!deleteTarget) return;
     setSaving(true);
     setError("");
     try {
-      await deleteDepartment(deleteId);
+      await deleteDepartment(deleteTarget);
       setNotice("Department deleted successfully");
-      setShowDeleteModal(false);
-      setDeleteId(null);
+      setDeleteTarget(null);
       await loadData();
     } catch (e) {
       setError(extractApiErrorMessage(e, "Failed to delete department"));
@@ -162,8 +228,114 @@ export default function DepartmentPage() {
     }
   };
 
+  // ── Statistics ─────────────────────────────────────────────────────────────────
+
   const totalDepartments = rows.length;
   const activeDepartments = rows.filter((d) => String(d?.status || "").toUpperCase() === "ACTIVE").length;
+
+  // ── Form Renderers ────────────────────────────────────────────────────────────
+
+  const renderBasicInfoFields = () => (
+    <div className="row g-3">
+      <div className="col-12">
+        <p className="avm-section-title">Department Information</p>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Department Name *</label>
+        <input
+          className="form-control"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Enter department name"
+        />
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Branch *</label>
+        <select
+          className="form-select"
+          value={form.branchId}
+          onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+          disabled={currentRole === "ADMIN" || brLoading}
+        >
+          <option value="">Select Branch</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+        {currentRole === "ADMIN" && (
+          <small className="text-muted d-block mt-1">
+            Branch is locked to your assigned branch
+          </small>
+        )}
+      </div>
+
+      <div className="col-md-6">
+        <label className="form-label">Status</label>
+        <select
+          className="form-select"
+          value={form.status}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+        >
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  const renderDetailsFields = () => (
+    <div className="row g-3">
+      <div className="col-12">
+        <p className="avm-section-title">Department Details</p>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Description</label>
+        <textarea
+          className="form-control"
+          rows={4}
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          placeholder="Describe the department's purpose and responsibilities"
+        />
+        <small className="text-muted d-block mt-1">
+          Optional: Add details about this department
+        </small>
+      </div>
+    </div>
+  );
+
+  // ── Delete Confirmation Modal ─────────────────────────────────────────────────
+
+  const renderDeleteModal = () => (
+    deleteTarget && (
+      <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Confirm Delete</h5>
+              <button type="button" className="btn-close" onClick={() => setDeleteTarget(null)} />
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this department? This action cannot be undone.</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-light" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="page-wrapper department-page-wrapper">
@@ -189,11 +361,27 @@ export default function DepartmentPage() {
           </button>
         </div>
 
+        {/* ── Statistics Cards ── */}
         <div className="row mb-4">
-          <div className="col-md-6"><div className="card"><div className="card-body text-center"><h3 className="mb-0">{totalDepartments}</h3><p className="text-muted small mb-0">Total Departments</p></div></div></div>
-          <div className="col-md-6"><div className="card"><div className="card-body text-center"><h3 className="mb-0">{activeDepartments}</h3><p className="text-muted small mb-0">Active Departments</p></div></div></div>
+          <div className="col-md-6">
+            <div className="card">
+              <div className="card-body text-center">
+                <h3 className="mb-0">{totalDepartments}</h3>
+                <p className="text-muted small mb-0">Total Departments</p>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-6">
+            <div className="card">
+              <div className="card-body text-center">
+                <h3 className="mb-0">{activeDepartments}</h3>
+                <p className="text-muted small mb-0">Active Departments</p>
+              </div>
+            </div>
+          </div>
         </div>
 
+        {/* ── Departments Table ── */}
         <div className="card">
           <div className="card-header d-flex justify-content-between align-items-center">
             <h5 className="mb-0">Departments List</h5>
@@ -202,111 +390,77 @@ export default function DepartmentPage() {
             <div className="table-responsive">
               <table className="table table-striped table-hover mb-0">
                 <thead className="thead-light">
-                  <tr><th>Name</th><th>Branch</th><th>Description</th><th>Status</th><th>Actions</th></tr>
+                  <tr>
+                    <th>Name</th>
+                    <th>Branch</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={5} className="text-center py-4">Loading...</td></tr>
+                    <tr>
+                      <td colSpan={5} className="text-center py-4">Loading...</td>
+                    </tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-4">No departments found</td></tr>
-                  ) : rows.map((dept) => {
-                    const branch = branches.find((b) => b.id === dept.branchId);
-                    return (
-                      <tr key={dept.id}>
-                        <td className="fw-semibold">{dept.name}</td>
-                        <td>{branch?.name || "-"}</td>
-                        <td>{dept.description || "-"}</td>
-                        <td><span className={`badge ${dept.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>{dept.status === "ACTIVE" ? "Active" : "Inactive"}</span></td>
-                        <td>
-                          <button className="btn btn-sm btn-outline-primary me-1" onClick={() => openEdit(dept)}><IconEdit size={14} /></button>
-                          <button className="btn btn-sm btn-outline-danger" onClick={() => confirmDelete(dept.id)}><IconTrash size={14} /></button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                    <tr>
+                      <td colSpan={5} className="text-center py-4">No departments found</td>
+                    </tr>
+                  ) : (
+                    rows.map((dept) => {
+                      const branch = branches.find((b) => b.id === dept.branchId);
+                      return (
+                        <tr key={dept.id}>
+                          <td className="fw-semibold">{dept.name}</td>
+                          <td>{branch?.name || "-"}</td>
+                          <td>{dept.description || "-"}</td>
+                          <td>
+                            <span className={`badge ${dept.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>
+                              {dept.status === "ACTIVE" ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td>
+                            <button className="btn btn-sm btn-outline-primary me-1" onClick={() => openEdit(dept)}>
+                              <IconEdit size={14} />
+                            </button>
+                            <button className="btn btn-sm btn-outline-danger" onClick={() => confirmDelete(dept.id)}>
+                              <IconTrash size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
 
-        {showModal && (
-          <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
-            <div className="modal-dialog modal-lg">
-              <form className="modal-content" onSubmit={handleSubmit}>
-                <div className="modal-header">
-                  <h5 className="modal-title">{isEdit ? "Edit Department" : "Add Department"}</h5>
-                  <button type="button" className="btn-close" onClick={() => setShowModal(false)} />
-                </div>
+        {/* ── Add / Edit Department Modal using WizardPopup ─────────────────────── */}
+        <WizardPopup
+          open={showModal}
+          title={isEdit ? "Edit Department" : "Add Department"}
+          steps={DEPARTMENT_STEPS.map((item) => item.label)}
+          step={modalStepIndex}
+          onClose={closeModal}
+          onBack={goToPreviousModalStep}
+          onNext={goToNextModalStep}
+          onSubmit={handleSubmit}
+          submitLabel={saving ? "Saving..." : "Save Changes"}
+          modalWidth="580px"
+          disabled={saving}
+        >
+          {modalError && <div className="alert alert-danger">{modalError}</div>}
 
-                {modalError && <div className="px-4 pt-3"><div className="alert alert-danger mb-0">{modalError}</div></div>}
+          {modalTab === "basic" && renderBasicInfoFields()}
+          {modalTab === "details" && renderDetailsFields()}
+        </WizardPopup>
 
-                <div className="modal-body">
-                  <div className="row g-3">
-                    <div className="col-12"><h6 className="mb-3 text-primary">Department Information</h6></div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Department Name *</label>
-                      <input className="form-control" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Branch *</label>
-                      <select
-                        className="form-select"
-                        value={form.branchId}
-                        onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-                        disabled={currentRole === "ADMIN" || brLoading}
-                        required
-                      >
-                        <option value="">Select Branch</option>
-                        {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label">Description</label>
-                      <textarea className="form-control" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Status</label>
-                      <select className="form-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                        <option value="ACTIVE">Active</option>
-                        <option value="INACTIVE">Inactive</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-light" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Save Changes"}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-        {showModal && <div className="modal-backdrop fade show" />}
-
-        {showDeleteModal && (
-          <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content">
-                <div className="modal-header">
-                  <h5 className="modal-title">Confirm Delete</h5>
-                  <button type="button" className="btn-close" onClick={() => setShowDeleteModal(false)} />
-                </div>
-                <div className="modal-body"><p>Are you sure you want to delete this department? This action cannot be undone.</p></div>
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-light" onClick={() => setShowDeleteModal(false)}>Cancel</button>
-                  <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>{saving ? "Deleting..." : "Delete"}</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        {showDeleteModal && <div className="modal-backdrop fade show" />}
+        {/* ── Delete Confirmation Modal ─────────────────────────────────────────── */}
+        {renderDeleteModal()}
+        {deleteTarget && <div className="modal-backdrop fade show" />}
       </div>
     </div>
   );

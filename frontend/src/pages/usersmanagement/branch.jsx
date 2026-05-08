@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { IconHome, IconEdit, IconTrash, IconPlus } from '@tabler/icons-react';
 import { 
@@ -10,35 +10,32 @@ import {
   getAllHeadOffices 
 } from "../../api/orgHierarchyApi";
 import { extractApiErrorMessage } from "../../utils/errorMessage";
-import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
+import WizardPopup from "../../components/WizardPopup";
+import PhoneField from "../../components/PhoneField";
+import { ensureCountryCodeValue, sanitizePhoneDigits, splitPhoneWithCountryCode, validatePhoneNumber } from "../../utils/phoneUtils";
 
-
-function getCurrentUserId(user) {
-  const raw = user?.userId ?? user?.id ?? localStorage.getItem("userId");
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
 const EMPTY_FORM = {
   name: "",
   headOfficeId: "",
   location: "",
   address: "",
   phone: "",
+  countryCode: "+91",
   email: "",
-  managerName: "",
   status: "ACTIVE",
 };
+
+const BRANCH_STEPS = [
+  { key: "basic", label: "Basic Info" },
+  { key: "contact", label: "Contact Details" },
+];
 
 export default function BranchPage() {
   const { user: currentUser } = useAuth();
   const currentRole = String(currentUser?.role || "").toUpperCase();
-  const currentUserId = getCurrentUserId(currentUser);
-
   const [rows, setRows] = useState([]);
   const [headOffices, setHeadOffices] = useState([]);
-  const [managerOptions, setManagerOptions] = useState([]);
-  const [managerLoading, setManagerLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [heLoading, setHeLoading] = useState(false);
   const [error, setError] = useState("");
@@ -49,11 +46,18 @@ export default function BranchPage() {
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [selectedId, setSelectedId] = useState(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [modalError, setModalError] = useState("");
+  const [modalTab, setModalTab] = useState("basic");
 
-  // â”€â”€ Data loaders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const modalStepIndex = useMemo(() => {
+    const index = BRANCH_STEPS.findIndex((item) => item.key === modalTab);
+    return index >= 0 ? index : 0;
+  }, [modalTab]);
+
+  const modalStepCount = BRANCH_STEPS.length;
+
+  // ── Data loaders ─────────────────────────────────────────────────────────────
 
   const loadData = async () => {
     setLoading(true);
@@ -95,24 +99,9 @@ export default function BranchPage() {
     }
   };
 
-
-  const loadManagers = async () => {
-    if (!currentUserId) return;
-    setManagerLoading(true);
-    try {
-      const response = await api.get("/users/managers", { params: { requesterId: currentUserId } });
-      const data = response?.data?.data;
-      setManagerOptions(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setManagerOptions([]);
-    } finally {
-      setManagerLoading(false);
-    }
-  };
   useEffect(() => {
     loadData();
     loadHeadOffices();
-    loadManagers();
   }, []);
 
   useEffect(() => {
@@ -121,19 +110,19 @@ export default function BranchPage() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  // â”€â”€ Authorization Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Authorization Check ───────────────────────────────────────────────────────
 
   if (!["SUPER_ADMIN", "ADMIN"].includes(currentRole)) {
     return (
       <div className="content">
         <div className="alert alert-danger">
-          â›” Only Super Admin and Admin can manage Branches
+          ⛔ Only Super Admin and Admin can manage Branches
         </div>
       </div>
     );
   }
 
-  // â”€â”€ Modal open/close â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Modal open/close ──────────────────────────────────────────────────────────
 
   const openAdd = () => {
     setForm({
@@ -142,40 +131,122 @@ export default function BranchPage() {
     });
     setIsEdit(false);
     setModalError("");
+    setModalTab("basic");
     setShowModal(true);
   };
 
   const openEdit = (branch) => {
+    const parsedPhone = splitPhoneWithCountryCode(branch?.phone);
+
     setForm({
       name: branch?.name || "",
       headOfficeId: String(branch?.headOfficeId || ""),
       location: branch?.location || "",
       address: branch?.address || "",
-      phone: branch?.phone || "",
+      phone: parsedPhone.phone,
+      countryCode: parsedPhone.countryCode,
       email: branch?.email || "",
-      managerName: branch?.managerName || "",
       status: String(branch?.status || "ACTIVE").toUpperCase(),
     });
     setSelectedId(branch?.id);
     setIsEdit(true);
     setModalError("");
+    setModalTab("basic");
     setShowModal(true);
   };
 
-  // â”€â”€ Form submit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const closeModal = () => {
+    setShowModal(false);
     setModalError("");
+    setModalTab("basic");
+  };
 
+  const goToNextModalStep = () => {
+    setModalError("");
+    
+    // Validate current step before proceeding
+    if (modalTab === "basic") {
+      if (!form.name?.trim()) {
+        setModalError("Branch name is required");
+        return;
+      }
+      if (!form.headOfficeId) {
+        setModalError("Head office is required");
+        return;
+      }
+    }
+    
+    if (modalTab === "contact") {
+      if (form.phone) {
+        const phoneValidation = validatePhoneNumber(form.phone, form.countryCode);
+        if (phoneValidation) {
+          setModalError(phoneValidation);
+          return;
+        }
+      }
+      if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+        setModalError("Please enter a valid email address");
+        return;
+      }
+    }
+    
+    if (modalStepIndex < modalStepCount - 1) {
+      setModalTab(BRANCH_STEPS[modalStepIndex + 1].key);
+    }
+  };
+
+  const goToPreviousModalStep = () => {
+    setModalError("");
+    if (modalStepIndex > 0) {
+      setModalTab(BRANCH_STEPS[modalStepIndex - 1].key);
+    }
+  };
+
+  // ── Form submit ───────────────────────────────────────────────────────────────
+
+  const validateForm = () => {
     if (!form.name?.trim()) {
-      setModalError("Branch name is required");
-      return;
+      return "Branch name is required";
     }
 
     if (!form.headOfficeId) {
-      setModalError("Head office is required");
+      return "Head office is required";
+    }
+
+    if (form.phone) {
+      const phoneValidation = validatePhoneNumber(form.phone, form.countryCode);
+      if (phoneValidation) return phoneValidation;
+    }
+
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      return "Please enter a valid email address";
+    }
+
+    return null;
+  };
+
+  const handleSubmit = async () => {
+    setModalError("");
+
+    const validationMessage = validateForm();
+    if (validationMessage) {
+      setModalError(validationMessage);
+      if (validationMessage.includes("phone") || validationMessage.includes("email")) {
+        setModalTab("contact");
+      } else if (validationMessage.includes("Head office")) {
+        setModalTab("basic");
+      } else {
+        setModalTab("basic");
+      }
       return;
+    }
+
+    // Format phone with country code
+    let formattedPhone = "";
+    if (form.phone) {
+      const normalizedCode = ensureCountryCodeValue(form.countryCode);
+      const digits = sanitizePhoneDigits(form.phone);
+      formattedPhone = digits ? `${normalizedCode}${digits}` : "";
     }
 
     const payload = {
@@ -183,9 +254,8 @@ export default function BranchPage() {
       headOfficeId: Number(form.headOfficeId),
       location: form.location?.trim() || null,
       address: form.address?.trim() || null,
-      phone: form.phone?.trim() || null,
+      phone: formattedPhone || null,
       email: form.email?.trim() || null,
-      managerName: form.managerName?.trim() || null,
       status: form.status,
     };
 
@@ -198,7 +268,7 @@ export default function BranchPage() {
         await createBranch(payload);
         setNotice("Branch added successfully");
       }
-      setShowModal(false);
+      closeModal();
       setForm(EMPTY_FORM);
       setSelectedId(null);
       await loadData();
@@ -209,22 +279,20 @@ export default function BranchPage() {
     }
   };
 
-  // â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Delete ────────────────────────────────────────────────────────────────────
 
   const confirmDelete = (id) => {
-    setDeleteId(id);
-    setShowDeleteModal(true);
+    setDeleteTarget(id);
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
+    if (!deleteTarget) return;
     setSaving(true);
     setError("");
     try {
-      await deleteBranch(deleteId);
+      await deleteBranch(deleteTarget);
       setNotice("Branch deleted successfully");
-      setShowDeleteModal(false);
-      setDeleteId(null);
+      setDeleteTarget(null);
       await loadData();
     } catch (e) {
       setError(extractApiErrorMessage(e, "Failed to delete branch"));
@@ -233,18 +301,140 @@ export default function BranchPage() {
     }
   };
 
-  // â”€â”€ Statistics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Statistics ─────────────────────────────────────────────────────────────────
 
-
-  const filteredManagers = managerOptions.filter((manager) => {
-    const managerHeadOfficeId = manager?.headOfficeId ?? manager?.headOffice?.id;
-    if (!form.headOfficeId) return true;
-    return String(managerHeadOfficeId || "") === String(form.headOfficeId);
-  });
   const totalBranches = rows.length;
   const activeBranches = rows.filter(b => String(b?.status || "").toUpperCase() === "ACTIVE").length;
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Form Renderers ────────────────────────────────────────────────────────────
+
+  const renderBasicInfoFields = () => (
+    <div className="row g-3">
+      <div className="col-12">
+        <p className="avm-section-title">Branch Information</p>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Branch Name *</label>
+        <input
+          className="form-control"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Enter branch name"
+        />
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Head Office *</label>
+        <select
+          className="form-select"
+          value={form.headOfficeId}
+          onChange={(e) => setForm({ ...form, headOfficeId: e.target.value })}
+          disabled={currentRole === "ADMIN" || heLoading}
+        >
+          <option value="">Select Head Office</option>
+          {headOffices.map(office => (
+            <option key={office.id} value={office.id}>{office.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Location</label>
+        <input
+          className="form-control"
+          value={form.location}
+          onChange={(e) => setForm({ ...form, location: e.target.value })}
+          placeholder="e.g. Bangalore, Mumbai, Delhi"
+        />
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Address</label>
+        <textarea
+          className="form-control"
+          rows={3}
+          value={form.address}
+          onChange={(e) => setForm({ ...form, address: e.target.value })}
+          placeholder="Full address of the branch"
+        />
+      </div>
+
+      <div className="col-md-6">
+        <label className="form-label">Status</label>
+        <select
+          className="form-select"
+          value={form.status}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+        >
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  const renderContactFields = () => (
+    <div className="row g-3">
+      <div className="col-12">
+        <p className="avm-section-title">Contact Details</p>
+      </div>
+
+      <div className="col-md-12">
+        <PhoneField
+          id="branchPhone"
+          label="Phone Number"
+          countryCode={form.countryCode}
+          value={form.phone}
+          onChange={({ countryCode, phone }) => setForm({ ...form, countryCode, phone })}
+        />
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Email Address</label>
+        <input
+          type="email"
+          className="form-control"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="branch@example.com"
+        />
+        <small className="text-muted d-block mt-1">
+          Used for official communication
+        </small>
+      </div>
+    </div>
+  );
+
+  // ── Delete Confirmation Modal ─────────────────────────────────────────────────
+
+  const renderDeleteModal = () => (
+    deleteTarget && (
+      <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Confirm Delete</h5>
+              <button type="button" className="btn-close" onClick={() => setDeleteTarget(null)} />
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this branch? This action cannot be undone.</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-light" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="page-wrapper branch-page-wrapper">
@@ -275,7 +465,7 @@ export default function BranchPage() {
           </div>
         </div>
 
-        {/* â”€â”€ Statistics Cards â”€â”€ */}
+        {/* ── Statistics Cards ── */}
         <div className="row mb-4">
           <div className="col-md-6">
             <div className="card">
@@ -295,7 +485,7 @@ export default function BranchPage() {
           </div>
         </div>
 
-        {/* â”€â”€ Branches Table â”€â”€ */}
+        {/* ── Branches Table ── */}
         <div className="card">
           <div className="card-header d-flex justify-content-between align-items-center">
             <h5 className="mb-0">Branches List</h5>
@@ -308,7 +498,6 @@ export default function BranchPage() {
                     <th>Name</th>
                     <th>Head Office</th>
                     <th>Location</th>
-                    <th>Manager</th>
                     <th>Contact</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -317,11 +506,11 @@ export default function BranchPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-4">Loading...</td>
+                      <td colSpan={6} className="text-center py-4">Loading...</td>
                     </tr>
                   ) : rows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-4">No branches found</td>
+                      <td colSpan={6} className="text-center py-4">No branches found</td>
                     </tr>
                   ) : (
                     rows.map((branch) => {
@@ -331,7 +520,6 @@ export default function BranchPage() {
                           <td className="fw-semibold">{branch.name}</td>
                           <td>{headOffice?.name || "-"}</td>
                           <td>{branch.location || "-"}</td>
-                          <td>{branch.managerName || "-"}</td>
                           <td>{branch.phone || "-"}</td>
                           <td>
                             <span className={`badge ${branch.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>
@@ -356,161 +544,29 @@ export default function BranchPage() {
           </div>
         </div>
 
-        {/* â”€â”€ Add / Edit Branch Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        {showModal && (
-          <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
-            <div className="modal-dialog modal-lg">
-              <form className="modal-content" onSubmit={handleSubmit}>
-                <div className="modal-header">
-                  <h5 className="modal-title">{isEdit ? "Edit Branch" : "Add Branch"}</h5>
-                  <button type="button" className="btn-close" onClick={() => setShowModal(false)} />
-                </div>
+        {/* ── Add / Edit Branch Modal using WizardPopup ─────────────────────────── */}
+        <WizardPopup
+          open={showModal}
+          title={isEdit ? "Edit Branch" : "Add Branch"}
+          steps={BRANCH_STEPS.map((item) => item.label)}
+          step={modalStepIndex}
+          onClose={closeModal}
+          onBack={goToPreviousModalStep}
+          onNext={goToNextModalStep}
+          onSubmit={handleSubmit}
+          submitLabel={saving ? "Saving..." : "Save Changes"}
+          modalWidth="580px"
+          disabled={saving}
+        >
+          {modalError && <div className="alert alert-danger">{modalError}</div>}
 
-                {modalError && (
-                  <div className="px-4 pt-3">
-                    <div className="alert alert-danger mb-0">{modalError}</div>
-                  </div>
-                )}
+          {modalTab === "basic" && renderBasicInfoFields()}
+          {modalTab === "contact" && renderContactFields()}
+        </WizardPopup>
 
-                <div className="modal-body">
-                  <div className="row g-3">
-                    <div className="col-12">
-                      <h6 className="mb-3 text-primary">Branch Information</h6>
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Branch Name *</label>
-                      <input
-                        className="form-control"
-                        value={form.name}
-                        onChange={(e) => setForm({ ...form, name: e.target.value })}
-                        required
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Head Office *</label>
-                      <select
-                        className="form-select"
-                        value={form.headOfficeId}
-                        onChange={(e) => setForm({ ...form, headOfficeId: e.target.value })}
-                        disabled={currentRole === "ADMIN" || heLoading}
-                        required
-                      >
-                        <option value="">Select Head Office</option>
-                        {headOffices.map(office => (
-                          <option key={office.id} value={office.id}>{office.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Location</label>
-                      <input
-                        className="form-control"
-                        value={form.location}
-                        onChange={(e) => setForm({ ...form, location: e.target.value })}
-                        placeholder="e.g. Bangalore"
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Manager Name</label>
-                      <input
-                        className="form-control"
-                        value={form.managerName}
-                        onChange={(e) => setForm({ ...form, managerName: e.target.value })}
-                        placeholder="Branch Manager"
-                      />
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label">Address</label>
-                      <textarea
-                        className="form-control"
-                        rows={2}
-                        value={form.address}
-                        onChange={(e) => setForm({ ...form, address: e.target.value })}
-                        placeholder="Full address"
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Phone</label>
-                      <input
-                        className="form-control"
-                        value={form.phone}
-                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                        placeholder="+91 XXXXXXXXXX"
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Email</label>
-                      <input
-                        type="email"
-                        className="form-control"
-                        value={form.email}
-                        onChange={(e) => setForm({ ...form, email: e.target.value })}
-                        placeholder="branch@example.com"
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Status</label>
-                      <select
-                        className="form-select"
-                        value={form.status}
-                        onChange={(e) => setForm({ ...form, status: e.target.value })}
-                      >
-                        <option value="ACTIVE">Active</option>
-                        <option value="INACTIVE">Inactive</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-light" onClick={() => setShowModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={saving}>
-                    {saving ? "Saving..." : "Save Changes"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {showModal && <div className="modal-backdrop fade show" />}
-
-        {/* â”€â”€ Delete Confirmation Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        {showDeleteModal && (
-          <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content">
-                <div className="modal-header">
-                  <h5 className="modal-title">Confirm Delete</h5>
-                  <button type="button" className="btn-close" onClick={() => setShowDeleteModal(false)} />
-                </div>
-                <div className="modal-body">
-                  <p>Are you sure you want to delete this branch? This action cannot be undone.</p>
-                </div>
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-light" onClick={() => setShowDeleteModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>
-                    {saving ? "Deleting..." : "Delete"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showDeleteModal && <div className="modal-backdrop fade show" />}
+        {/* ── Delete Confirmation Modal ─────────────────────────────────────────── */}
+        {renderDeleteModal()}
+        {deleteTarget && <div className="modal-backdrop fade show" />}
       </div>
     </div>
   );

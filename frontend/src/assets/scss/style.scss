@@ -77,12 +77,13 @@
 .team-page-wrapper,
 .head-office-page-wrapper {
   margin-top: 90px;
-  margin-left: 96px; /* match expanded sidebar */
+  margin-left: 245px;
   margin-right: 24px;
   width: auto;
   min-height: calc(100vh - 90px);
   box-sizing: border-box;
   overflow-x: hidden;
+  transition: margin-left 0.5s ease;
 }
 
 .users-page-wrapper .content,

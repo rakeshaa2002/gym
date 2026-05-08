@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { IconHome, IconEdit, IconTrash, IconPlus } from '@tabler/icons-react';
 import { 
@@ -11,15 +11,19 @@ import {
 } from "../../api/orgHierarchyApi";
 import { extractApiErrorMessage } from "../../utils/errorMessage";
 import { useAuth } from "../../context/AuthContext";
+import WizardPopup from "../../components/WizardPopup";
 
 const EMPTY_FORM = {
   name: "",
   departmentId: "",
   description: "",
-  teamLead: "",
-  memberCount: 0,
   status: "ACTIVE",
 };
+
+const TEAM_STEPS = [
+  { key: "basic", label: "Basic Info" },
+  { key: "description", label: "Description" },
+];
 
 export default function TeamPage() {
   const { user: currentUser } = useAuth();
@@ -37,9 +41,16 @@ export default function TeamPage() {
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [selectedId, setSelectedId] = useState(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [modalError, setModalError] = useState("");
+  const [modalTab, setModalTab] = useState("basic");
+
+  const modalStepIndex = useMemo(() => {
+    const index = TEAM_STEPS.findIndex((item) => item.key === modalTab);
+    return index >= 0 ? index : 0;
+  }, [modalTab]);
+
+  const modalStepCount = TEAM_STEPS.length;
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
@@ -107,6 +118,7 @@ export default function TeamPage() {
     setForm(EMPTY_FORM);
     setIsEdit(false);
     setModalError("");
+    setModalTab("basic");
     setShowModal(true);
   };
 
@@ -115,29 +127,67 @@ export default function TeamPage() {
       name: team?.name || "",
       departmentId: String(team?.departmentId || ""),
       description: team?.description || "",
-      teamLead: team?.teamLead || "",
-      memberCount: team?.memberCount || 0,
       status: String(team?.status || "ACTIVE").toUpperCase(),
     });
     setSelectedId(team?.id);
     setIsEdit(true);
     setModalError("");
+    setModalTab("basic");
     setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setModalError("");
+    setModalTab("basic");
+  };
+
+  const goToNextModalStep = () => {
+    setModalError("");
+    
+    // Validate current step before proceeding
+    if (modalTab === "basic") {
+      if (!form.name?.trim()) {
+        setModalError("Team name is required");
+        return;
+      }
+      if (!form.departmentId) {
+        setModalError("Department is required");
+        return;
+      }
+    }
+    
+    if (modalStepIndex < modalStepCount - 1) {
+      setModalTab(TEAM_STEPS[modalStepIndex + 1].key);
+    }
+  };
+
+  const goToPreviousModalStep = () => {
+    setModalError("");
+    if (modalStepIndex > 0) {
+      setModalTab(TEAM_STEPS[modalStepIndex - 1].key);
+    }
   };
 
   // ── Form submit ───────────────────────────────────────────────────────────────
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const validateForm = () => {
+    if (!form.name?.trim()) {
+      return "Team name is required";
+    }
+    if (!form.departmentId) {
+      return "Department is required";
+    }
+    return null;
+  };
+
+  const handleSubmit = async () => {
     setModalError("");
 
-    if (!form.name?.trim()) {
-      setModalError("Team name is required");
-      return;
-    }
-
-    if (!form.departmentId) {
-      setModalError("Department is required");
+    const validationMessage = validateForm();
+    if (validationMessage) {
+      setModalError(validationMessage);
+      setModalTab("basic");
       return;
     }
 
@@ -145,8 +195,6 @@ export default function TeamPage() {
       name: form.name.trim(),
       departmentId: Number(form.departmentId),
       description: form.description?.trim() || null,
-      teamLead: form.teamLead?.trim() || null,
-      memberCount: Number(form.memberCount) || 0,
       status: form.status,
     };
 
@@ -159,7 +207,7 @@ export default function TeamPage() {
         await createTeam(payload);
         setNotice("Team added successfully");
       }
-      setShowModal(false);
+      closeModal();
       setForm(EMPTY_FORM);
       setSelectedId(null);
       await loadData();
@@ -173,19 +221,17 @@ export default function TeamPage() {
   // ── Delete ────────────────────────────────────────────────────────────────────
 
   const confirmDelete = (id) => {
-    setDeleteId(id);
-    setShowDeleteModal(true);
+    setDeleteTarget(id);
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
+    if (!deleteTarget) return;
     setSaving(true);
     setError("");
     try {
-      await deleteTeam(deleteId);
+      await deleteTeam(deleteTarget);
       setNotice("Team deleted successfully");
-      setShowDeleteModal(false);
-      setDeleteId(null);
+      setDeleteTarget(null);
       await loadData();
     } catch (e) {
       setError(extractApiErrorMessage(e, "Failed to delete team"));
@@ -199,6 +245,103 @@ export default function TeamPage() {
   const totalTeams = rows.length;
   const activeTeams = rows.filter(t => String(t?.status || "").toUpperCase() === "ACTIVE").length;
   const totalMembers = rows.reduce((sum, t) => sum + (Number(t?.memberCount) || 0), 0);
+
+  // ── Form Renderers ────────────────────────────────────────────────────────────
+
+  const renderBasicInfoFields = () => (
+    <div className="row g-3">
+      <div className="col-12">
+        <p className="avm-section-title">Team Information</p>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Team Name *</label>
+        <input
+          className="form-control"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Enter team name"
+        />
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Department *</label>
+        <select
+          className="form-select"
+          value={form.departmentId}
+          onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
+          disabled={deptLoading}
+        >
+          <option value="">Select Department</option>
+          {departments.map(d => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="col-md-6">
+        <label className="form-label">Status</label>
+        <select
+          className="form-select"
+          value={form.status}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+        >
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  const renderDescriptionFields = () => (
+    <div className="row g-3">
+      <div className="col-12">
+        <p className="avm-section-title">Team Description</p>
+      </div>
+
+      <div className="col-md-12">
+        <label className="form-label">Description</label>
+        <textarea
+          className="form-control"
+          rows={5}
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          placeholder="Describe the team's purpose, responsibilities, and goals"
+        />
+        <small className="text-muted d-block mt-1">
+          Optional: Add details about this team
+        </small>
+      </div>
+    </div>
+  );
+
+  // ── Delete Confirmation Modal ─────────────────────────────────────────────────
+
+  const renderDeleteModal = () => (
+    deleteTarget && (
+      <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Confirm Delete</h5>
+              <button type="button" className="btn-close" onClick={() => setDeleteTarget(null)} />
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this team? This action cannot be undone.</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-light" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  );
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -281,7 +424,7 @@ export default function TeamPage() {
                   {loading ? (
                     <tr>
                       <td colSpan={6} className="text-center py-4">Loading...</td>
-                    </tr>
+                  </tr>
                   ) : rows.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="text-center py-4">No teams found</td>
@@ -320,141 +463,29 @@ export default function TeamPage() {
           </div>
         </div>
 
-        {/* ── Add / Edit Team Modal ─────────────────────────────────────────── */}
-        {showModal && (
-          <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
-            <div className="modal-dialog modal-lg">
-              <form className="modal-content" onSubmit={handleSubmit}>
-                <div className="modal-header">
-                  <h5 className="modal-title">{isEdit ? "Edit Team" : "Add Team"}</h5>
-                  <button type="button" className="btn-close" onClick={() => setShowModal(false)} />
-                </div>
+        {/* ── Add / Edit Team Modal using WizardPopup ─────────────────────────── */}
+        <WizardPopup
+          open={showModal}
+          title={isEdit ? "Edit Team" : "Add Team"}
+          steps={TEAM_STEPS.map((item) => item.label)}
+          step={modalStepIndex}
+          onClose={closeModal}
+          onBack={goToPreviousModalStep}
+          onNext={goToNextModalStep}
+          onSubmit={handleSubmit}
+          submitLabel={saving ? "Saving..." : "Save Changes"}
+          modalWidth="580px"
+          disabled={saving}
+        >
+          {modalError && <div className="alert alert-danger">{modalError}</div>}
 
-                {modalError && (
-                  <div className="px-4 pt-3">
-                    <div className="alert alert-danger mb-0">{modalError}</div>
-                  </div>
-                )}
+          {modalTab === "basic" && renderBasicInfoFields()}
+          {modalTab === "description" && renderDescriptionFields()}
+        </WizardPopup>
 
-                <div className="modal-body">
-                  <div className="row g-3">
-                    <div className="col-12">
-                      <h6 className="mb-3 text-primary">Team Information</h6>
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Team Name *</label>
-                      <input
-                        className="form-control"
-                        value={form.name}
-                        onChange={(e) => setForm({ ...form, name: e.target.value })}
-                        required
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Department *</label>
-                      <select
-                        className="form-select"
-                        value={form.departmentId}
-                        onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-                        disabled={deptLoading}
-                        required
-                      >
-                        <option value="">Select Department</option>
-                        {departments.map(d => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Team Lead</label>
-                      <input
-                        className="form-control"
-                        value={form.teamLead}
-                        onChange={(e) => setForm({ ...form, teamLead: e.target.value })}
-                        placeholder="Team Lead Name"
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Member Count</label>
-                      <input
-                        type="number"
-                        className="form-control"
-                        value={form.memberCount}
-                        onChange={(e) => setForm({ ...form, memberCount: e.target.value })}
-                        min="0"
-                      />
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label">Description</label>
-                      <textarea
-                        className="form-control"
-                        rows={2}
-                        value={form.description}
-                        onChange={(e) => setForm({ ...form, description: e.target.value })}
-                        placeholder="Team description"
-                      />
-                    </div>
-
-                    <div className="col-md-6">
-                      <label className="form-label">Status</label>
-                      <select
-                        className="form-select"
-                        value={form.status}
-                        onChange={(e) => setForm({ ...form, status: e.target.value })}
-                      >
-                        <option value="ACTIVE">Active</option>
-                        <option value="INACTIVE">Inactive</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-light" onClick={() => setShowModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={saving}>
-                    {saving ? "Saving..." : "Save Changes"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {showModal && <div className="modal-backdrop fade show" />}
-
-        {/* ── Delete Confirmation Modal ───────────────────────────────────────────── */}
-        {showDeleteModal && (
-          <div className="modal fade show" style={{ display: "block" }} tabIndex="-1">
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content">
-                <div className="modal-header">
-                  <h5 className="modal-title">Confirm Delete</h5>
-                  <button type="button" className="btn-close" onClick={() => setShowDeleteModal(false)} />
-                </div>
-                <div className="modal-body">
-                  <p>Are you sure you want to delete this team? This action cannot be undone.</p>
-                </div>
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-light" onClick={() => setShowDeleteModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={saving}>
-                    {saving ? "Deleting..." : "Delete"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showDeleteModal && <div className="modal-backdrop fade show" />}
+        {/* ── Delete Confirmation Modal ─────────────────────────────────────────── */}
+        {renderDeleteModal()}
+        {deleteTarget && <div className="modal-backdrop fade show" />}
       </div>
     </div>
   );
