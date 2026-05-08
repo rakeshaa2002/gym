@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserManagementController {
     private final UserManagementServiceImplementation userManagementServiceImplementation;
 
-    // ============ SUPER ADMIN ENDPOINTS ============
+    // ============ SUPER ADMIN ENDPOINTS ============ 
 
     @PostMapping("/super-admin")
     public ResponseEntity<?> createSuperAdmin(@Valid @RequestBody CreateSuperAdminRequest request,

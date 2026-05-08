@@ -1,5 +1,7 @@
 import axios from "axios";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8081/api";
+
 const clearAuthAndRedirect = () => {
   localStorage.removeItem("token");
   localStorage.removeItem("accessToken");
@@ -14,7 +16,7 @@ const clearAuthAndRedirect = () => {
 };
 
 const axiosInstance = axios.create({
-  baseURL: "http://localhost:8080/api",
+  baseURL: API_BASE,
 });
 
 axiosInstance.interceptors.request.use(

@@ -3,12 +3,13 @@ import * as TablerIcons from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 
 import errorimg from '/src/assets/images/error-img.png';
+import errorBg from '/src/assets/images/error-bg.png';
 
 export default function Errorpage() {
     return (
         <>
 
-            <section className="error-main">
+            <section className="error-main" style={{ backgroundImage: `url(${errorBg})` }}>
                 <div className="container">
                     <div className="row justify-content-center">
                         <div className="col-md-6 text-center">

@@ -20,6 +20,8 @@ import yoga from "/src/assets/images/dashboard/yoga.png"
 import workou1 from "/src/assets/images/dashboard/workout1.png"
 import workou2 from "/src/assets/images/dashboard/workout2.png"
 import workou3 from "/src/assets/images/dashboard/workout3.png"
+import stepCardBg from "/src/assets/images/dashboard/shap-partern.png"
+import trainingBg from "/src/assets/images/dashboard/training-bg.png"
 import sumosquate from "/src/assets/images/workout/sumo-squat.png"
 import frontlunge from "/src/assets/images/workout/front-lunge.png"
 import legabductaion from "../../assets/images/workout/leg-abduction.png"
@@ -70,7 +72,7 @@ export default function Index() {
                         <Row>
                             {/* Step Card */}
                             <Col lg={3} md={6}>
-                                <Card className="bg-primary text-white step-card">
+                                        <Card className="bg-primary text-white step-card" style={{ backgroundImage: `url(${stepCardBg})` }}>
                                     <Card.Body className="p-3">
                                         <h6 className="mb-4">                                                                                      
                                             <IconRun className='me-1'/>
@@ -334,7 +336,7 @@ export default function Index() {
                             <Col xxl={5}>
                                 <Row>
                                     <Col xxl={12} lg={6}>
-                                        <Card className="training-card training-card">
+                                        <Card className="training-card training-card" style={{ backgroundImage: `url(${trainingBg})` }}>
                                             <Card.Body>
                                                 <Row>
                                                     <Col md={8}>

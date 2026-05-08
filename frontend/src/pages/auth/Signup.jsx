@@ -8,8 +8,8 @@ import facebook from "/src/assets/images/icon/icon-facebook.png";
 import apple from "/src/assets/images/icon/icon-apple.png";
 import InputGroupText from 'react-bootstrap/esm/InputGroupText';
 import { IconEye, IconEyeOff } from '@tabler/icons-react';
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import api from "../../utils/api";
 
 export default function Signup() {
 
@@ -96,14 +96,11 @@ export default function Signup() {
                 name: formData.name
             });
 
-            const response = await axios.post(
-                "http://localhost:8080/api/auth/signup",
-                {
-                    email: formData.email,
-                    password: formData.password,
-                    name: formData.name
-                }
-            );
+            const response = await api.post("/auth/signup", {
+                email: formData.email,
+                password: formData.password,
+                name: formData.name
+            });
 
             console.log("Sign up success:", response.data);
 
@@ -132,7 +129,7 @@ export default function Signup() {
             if (error.response?.status === 400) {
                 setError(error.response?.data?.message || "Invalid input. Please check your details.");
             } else if (error.code === 'ERR_NETWORK') {
-                setError("Cannot connect to server. Make sure backend is running on localhost:8080");
+                setError("Cannot connect to server. Make sure backend is running on localhost:8081");
             } else {
                 setError(error.response?.data?.message || "An error occurred during registration. Please try again.");
             }

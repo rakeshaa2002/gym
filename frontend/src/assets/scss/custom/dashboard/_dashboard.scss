@@ -2,7 +2,6 @@
   26 DASHBOARD START
 *************************/
 .step-card{
-    background-image: url("/src/assets/images/dashboard/shap-partern.png");
     .progress{
         height: 12px;
         background-color: rgba($white,0.5);
@@ -31,7 +30,6 @@
     }
 }
 .training-card{
-    background-image:url("/src/assets/images/dashboard/training-bg.png") ;
     background-position: right;
     background-size: contain;
     background-repeat: no-repeat;

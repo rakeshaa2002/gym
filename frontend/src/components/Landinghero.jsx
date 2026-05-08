@@ -11,6 +11,7 @@ import step from "/src/assets/images/landing/hero/steps.png"
 import water from "/src/assets/images/landing/hero/water.png"
 import weightloss from "/src/assets/images/landing/hero/weight-loss.png"
 import { Link } from 'react-router-dom'
+import heroBg from "/src/assets/images/landing/hero-bg.png"
 
 export default function Landinghero() {
     return (
@@ -29,7 +30,10 @@ export default function Landinghero() {
                     </Col>
                 </Row>
             </Container>
-            <div className="hero-card">
+            <div
+                className="hero-card"
+                style={{ backgroundImage: `url(${heroBg})`, backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: 'cover' }}
+            >
                 <img src={demo} alt="" className="img-fluid demo-card" />
                 <img src={activity} alt="" className="img-fluid activity-card" />
                 <img src={calories}  alt="" className="img-fluid calories-card" />

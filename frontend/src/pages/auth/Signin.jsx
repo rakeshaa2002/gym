@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Link } from "react-router-dom";
 import { Container, Form, Row, Col, InputGroup, Alert } from 'react-bootstrap';
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "../../utils/api";
 import { useAuth } from '../../context/AuthContext'; // Adjust path as needed
 
 import logo from "/src/assets/images/logo/logo.png";
@@ -50,13 +50,10 @@ export default function Signin() {
         try {
             console.log("Attempting login with:", searchInpval.email);
             
-            const response = await axios.post(
-                "http://localhost:8080/api/auth/login",
-                {
-                    email: searchInpval.email,
-                    password: searchInpval.password
-                }
-            );
+            const response = await api.post("/auth/login", {
+                email: searchInpval.email,
+                password: searchInpval.password
+            });
 
             console.log("✅ Login Response:", response.data);
 
@@ -94,7 +91,7 @@ export default function Signin() {
             } else if (error.response?.status === 404) {
                 setError("User not found");
             } else if (error.code === 'ERR_NETWORK') {
-                setError("Cannot connect to server. Make sure backend is running on localhost:8080");
+                setError("Cannot connect to server. Make sure backend is running on localhost:8081");
             } else {
                 setError(error.response?.data?.message || "Login failed. Please try again.");
             }

@@ -5,6 +5,7 @@ import Footer from '../../components/Footer.jsx';
 import Workoutdata from "../api/Workoutdata.json";
 import {getImageUrl} from "../../utils/imageresolver.js"
 import { IconAdjustmentsHorizontal, IconHeart, IconPoint, IconX } from '@tabler/icons-react';
+import workoutBanner from "/src/assets/images/workout/workout-banner.png";
 export default function Workoutfilter() {
     const [sidebarActive, setSidebarActive] = useState(false);
     const [selectedLevel, setSelectedLevel] = useState("Beginner");
@@ -34,7 +35,7 @@ export default function Workoutfilter() {
                                     <h5 className="fw-bold">Close Filter</h5>                                   
                                     <IconX onClick={closeFilter} className='close-filter'/>
                                 </div>
-                                <Card className="workout-banner">
+                                <Card className="workout-banner" style={{ backgroundImage: `url(${workoutBanner})` }}>
                                     <CardBody>
                                         <h3 className="fw-bold lh-base text-black">
                                             Create Personal
