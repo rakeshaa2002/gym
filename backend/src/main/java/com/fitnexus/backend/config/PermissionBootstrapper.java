@@ -58,9 +58,16 @@ public class PermissionBootstrapper implements CommandLineRunner {
                 new PageSeed("goals", "Goals", "/goals", "Fitness", 40),
                 new PageSeed("schedule", "My Schedule", "/schedule", "Fitness", 41),
                 new PageSeed("progress", "Progress", "/progress", "Fitness", 42),
+                new PageSeed("wellness-chat", "Wellness Chat", "/wellness-chat", "Fitness", 43),
                 new PageSeed("profile", "Profile", "/profile", "Account", 50),
                 new PageSeed("onboding-step", "Step", "/onboding-step", "Account", 51),
-                new PageSeed("role-permissions", "Role Permissions", "/role-permissions", "Management", 5)
+                new PageSeed("role-permissions", "Role Permissions", "/role-permissions", "Management", 5),
+                new PageSeed("attendance", "Attendance", "/attendance", "Management", 6),
+                new PageSeed("membership-plans", "Membership Plans", "/membership-plans", "Management", 7),
+                new PageSeed("leads", "Leads CRM", "/leads", "Management", 8),
+                new PageSeed("billing", "Billing", "/billing", "Management", 32),
+                new PageSeed("inventory", "Inventory", "/inventory", "Management", 33),
+                new PageSeed("reports", "Reports", "/reports", "Management", 34)
         );
 
         for (PageSeed seed : seeds) {
@@ -106,9 +113,16 @@ public class PermissionBootstrapper implements CommandLineRunner {
                         new PermissionSeed("goals", true, true, true, true),
                         new PermissionSeed("schedule", true, true, true, true),
                         new PermissionSeed("progress", true, true, true, true),
+                        new PermissionSeed("wellness-chat", true, true, true, true),
                         new PermissionSeed("profile", true, true, true, true),
                         new PermissionSeed("onboding-step", true, true, true, true),
-                        new PermissionSeed("role-permissions", true, true, true, true)
+                        new PermissionSeed("role-permissions", true, true, true, true),
+                        new PermissionSeed("attendance", true, true, true, true),
+                        new PermissionSeed("membership-plans", true, true, true, true),
+                        new PermissionSeed("leads", true, true, true, true),
+                        new PermissionSeed("billing", true, true, true, true),
+                        new PermissionSeed("inventory", true, true, true, true),
+                        new PermissionSeed("reports", true, true, true, true)
                 ),
                 Role.ADMIN, List.of(
                         new PermissionSeed("dashboard", true, false, false, false),
@@ -126,7 +140,15 @@ public class PermissionBootstrapper implements CommandLineRunner {
                         new PermissionSeed("body-part", true, true, true, true),
                         new PermissionSeed("exercise-master", true, true, true, true),
                         new PermissionSeed("workout-plan", true, true, true, true),
-                        new PermissionSeed("workout-detail", true, true, true, true)
+                        new PermissionSeed("workout-detail", true, true, true, true),
+                        new PermissionSeed("attendance", true, true, true, true),
+                        new PermissionSeed("membership-plans", true, true, true, true),
+                        // Read-only oversight of trainer/member wellness chats.
+                        new PermissionSeed("wellness-chat", true, false, false, false),
+                        new PermissionSeed("leads", true, true, true, true),
+                        new PermissionSeed("billing", true, true, true, true),
+                        new PermissionSeed("inventory", true, true, true, true),
+                        new PermissionSeed("reports", true, true, true, true)
                 ),
                 Role.MANAGER, List.of(
                         new PermissionSeed("dashboard", true, false, false, false),
@@ -146,7 +168,15 @@ public class PermissionBootstrapper implements CommandLineRunner {
                         new PermissionSeed("workout-detail", true, true, true, true),
                         new PermissionSeed("trainer-duty-schedule", true, true, true, true),
                         new PermissionSeed("user-workout-schedule", true, true, true, true),
-                        new PermissionSeed("my-schedule", false, false, false, false)
+                        new PermissionSeed("my-schedule", false, false, false, false),
+                        new PermissionSeed("attendance", true, true, true, true),
+                        new PermissionSeed("membership-plans", true, true, true, true),
+                        // Read-only oversight of trainer/member wellness chats.
+                        new PermissionSeed("wellness-chat", true, false, false, false),
+                        new PermissionSeed("leads", true, true, true, true),
+                        new PermissionSeed("billing", true, true, true, true),
+                        new PermissionSeed("inventory", true, true, true, true),
+                        new PermissionSeed("reports", true, true, true, true)
                 ),
                 Role.TRAINER, List.of(
                         new PermissionSeed("dashboard", true, false, false, false),
@@ -170,7 +200,11 @@ public class PermissionBootstrapper implements CommandLineRunner {
                         new PermissionSeed("schedule", true, false, false, false),
                         new PermissionSeed("progress", true, false, false, false),
                         new PermissionSeed("profile", true, false, false, false),
-                        new PermissionSeed("onboding-step", true, false, false, false)
+                        new PermissionSeed("onboding-step", true, false, false, false),
+                        new PermissionSeed("wellness-chat", true, true, false, false),
+                        new PermissionSeed("attendance", true, true, true, true),
+                        new PermissionSeed("leads", true, false, false, false),
+                        new PermissionSeed("reports", true, false, false, false)
                 ),
                 Role.USER, List.of(
                         new PermissionSeed("dashboard", true, false, false, false),
@@ -184,7 +218,12 @@ public class PermissionBootstrapper implements CommandLineRunner {
                         new PermissionSeed("schedule", true, false, false, false),
                         new PermissionSeed("progress", true, false, false, false),
                         new PermissionSeed("profile", true, false, false, false),
-                        new PermissionSeed("onboding-step", true, false, false, false)
+                        new PermissionSeed("onboding-step", true, false, false, false),
+                        new PermissionSeed("wellness-chat", true, true, false, false),
+                        new PermissionSeed("attendance", true, false, false, false)
+                ),
+                Role.COUNSELOR, List.of(
+                        new PermissionSeed("leads", true, true, true, true)
                 )
         );
 

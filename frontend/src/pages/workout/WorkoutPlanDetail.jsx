@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Card, Col, Container, Row } from "react-bootstrap";
 import Slider from "react-slick";
 import Footer from "../../components/Footer";
-import { useAuth } from "../../context/AuthContext";
 import api from "../../utils/api";
 import { resolveDietImage } from "../../utils/dietImages";
+import { resolveWorkoutImage } from "../../utils/workoutImages";
 import { IconArrowLeft, IconChartBar, IconClock, IconPhoto, IconTarget, IconToolsKitchen2Off, IconListNumbers } from "@tabler/icons-react";
 import { normalizeWorkoutPlan } from "./workoutUtils";
 
@@ -24,11 +24,11 @@ const formatTime = (value) => {
 export default function WorkoutPlanDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [emptyMessage, setEmptyMessage] = useState("");
+  const [coverFailed, setCoverFailed] = useState(false);
 
   useEffect(() => {
     const loadPlan = async () => {
@@ -72,15 +72,9 @@ export default function WorkoutPlanDetail() {
     adaptiveHeight: true,
   }), []);
 
-  const goBack = () => navigate("/workout-plan");
-
-  if (!hasPermission("workout-plan")) {
-    return (
-      <div className="content">
-        <div className="alert alert-danger">You do not have permission to view Workout Plan details.</div>
-      </div>
-    );
-  }
+  // Read-only detail view: go back to wherever the user came from (the staff
+  // list for staff, the dashboard for members) rather than a fixed staff route.
+  const goBack = () => navigate(-1);
 
   return (
     <>
@@ -110,20 +104,25 @@ export default function WorkoutPlanDetail() {
                 <Col xxl={8}>
                   <Card className="mb-4">
                     <Card.Body>
-                      {imageList.length > 0 ? (
-                        imageList.length > 1 ? (
-                          <Slider {...sliderSettings} className="popularworkout-slider arrow-style1">
-                            {imageList.map((image, index) => (
-                              <div key={`${image}-${index}`}>
-                                <div className="workout-grid">
-                                  <img src={resolveDietImage(image)} alt={`${plan.name} ${index + 1}`} className="img-fluid w-100 rounded-3" style={{ maxHeight: 420, objectFit: "cover" }} />
-                                </div>
+                      {imageList.length > 1 ? (
+                        <Slider {...sliderSettings} className="popularworkout-slider arrow-style1">
+                          {imageList.map((image, index) => (
+                            <div key={`${image}-${index}`}>
+                              <div className="workout-grid">
+                                <img src={resolveDietImage(image)} alt={`${plan.name} ${index + 1}`} className="img-fluid w-100 rounded-3" style={{ maxHeight: 420, objectFit: "cover" }} />
                               </div>
-                            ))}
-                          </Slider>
-                        ) : (
-                          <img src={resolveDietImage(imageList[0])} alt={plan.name} className="img-fluid w-100 rounded-3" style={{ maxHeight: 420, objectFit: "cover" }} />
-                        )
+                            </div>
+                          ))}
+                        </Slider>
+                      ) : !coverFailed ? (
+                        // Uploaded mainImage if present, otherwise a curated cover matched to the plan.
+                        <img
+                          src={imageList.length === 1 ? resolveDietImage(imageList[0]) : resolveWorkoutImage(plan)}
+                          alt={plan.name}
+                          className="img-fluid w-100 rounded-3"
+                          style={{ maxHeight: 420, objectFit: "cover" }}
+                          onError={() => setCoverFailed(true)}
+                        />
                       ) : (
                         <div className="d-flex align-items-center justify-content-center bg-light rounded-3" style={{ minHeight: 320 }}>
                           <div className="text-center text-muted">

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 @RequiredArgsConstructor
 @Slf4j
 public class UserManagementController {
@@ -283,6 +283,43 @@ public class UserManagementController {
         }
     }
 
+    // ============ CORPORATE HR ENDPOINTS ============
+
+    @PostMapping("/corporate-hr")
+    public ResponseEntity<?> createCorporateHr(@Valid @RequestBody CreateCorporateHrRequest request,
+                                               @RequestParam Long creatorId, BindingResult bindingResult) {
+        try {
+            if (bindingResult.hasErrors()) {
+                String errorMessage = bindingResult.getFieldError().getDefaultMessage();
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), errorMessage,
+                                java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr"));
+            }
+            CorporateHrResponse response = userManagementServiceImplementation.createCorporateHr(request, creatorId);
+            log.info("Corporate HR created: {} by user: {}", request.getEmail(), creatorId);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiSuccessResponse<>(HttpStatus.CREATED.value(),
+                            "Corporate HR created successfully", response,
+                            java.time.LocalDateTime.now().toString()));
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid corporate hr creation request: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr"));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized corporate hr creation attempt: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr"));
+        } catch (Exception e) {
+            log.error("Error creating corporate hr: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error creating corporate hr: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr"));
+        }
+    }
+
     // ============ MANAGER ENDPOINTS ============
 
     @PostMapping("/manager")
@@ -548,6 +585,139 @@ public class UserManagementController {
         }
     }
 
+    // ============ COUNSELOR ENDPOINTS ============
+
+    @PostMapping("/counselor")
+    public ResponseEntity<?> createCounselor(@Valid @RequestBody CreateCounselorRequest request,
+                                           BindingResult bindingResult, @RequestParam Long creatorId) {
+        try {
+            if (bindingResult.hasErrors()) {
+                String errorMessage = bindingResult.getFieldError().getDefaultMessage();
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), errorMessage,
+                                java.time.LocalDateTime.now().toString(), "/api/users/counselor"));
+            }
+
+            CounselorResponse response = userManagementServiceImplementation.createCounselor(request, creatorId);
+            log.info("Counselor created: {} by user: {}", request.getEmail(), creatorId);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiSuccessResponse<>(HttpStatus.CREATED.value(),
+                            "Counselor created successfully", response,
+                            java.time.LocalDateTime.now().toString()));
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid counselor creation request: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor"));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized counselor creation: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor"));
+        } catch (Exception e) {
+            log.error("Error creating counselor: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error creating counselor: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor"));
+        }
+    }
+
+    @GetMapping("/counselor/{counselorId}")
+    public ResponseEntity<?> getCounselor(@PathVariable Long counselorId, @RequestParam Long requesterId) {
+        try {
+            CounselorResponse response = userManagementServiceImplementation.getCounselor(counselorId, requesterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Counselor retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to counselor: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+        } catch (Exception e) {
+            log.error("Error retrieving counselor: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving counselor: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+        }
+    }
+
+    @PutMapping("/counselor/{counselorId}")
+    public ResponseEntity<?> updateCounselor(@PathVariable Long counselorId,
+                                           @Valid @RequestBody CreateCounselorRequest request,
+                                           BindingResult bindingResult, @RequestParam Long updaterId) {
+        try {
+            if (bindingResult.hasErrors()) {
+                String errorMessage = bindingResult.getFieldError().getDefaultMessage();
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), errorMessage,
+                                java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+            }
+
+            CounselorResponse response = userManagementServiceImplementation.updateCounselor(counselorId, request, updaterId);
+            log.info("Counselor updated: {} by user: {}", counselorId, updaterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Counselor updated successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized counselor update: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+        } catch (Exception e) {
+            log.error("Error updating counselor: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error updating counselor: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+        }
+    }
+
+    @DeleteMapping("/counselor/{counselorId}")
+    public ResponseEntity<?> deleteCounselor(@PathVariable Long counselorId, @RequestParam Long deleterId) {
+        try {
+            userManagementServiceImplementation.deleteCounselor(counselorId, deleterId);
+            log.info("Counselor deleted: {} by user: {}", counselorId, deleterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Counselor deleted successfully", null,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized counselor deletion: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+        } catch (Exception e) {
+            log.error("Error deleting counselor: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error deleting counselor: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselor/" + counselorId));
+        }
+    }
+
+    @GetMapping("/counselors")
+    public ResponseEntity<?> getAllCounselors(@RequestParam Long requesterId) {
+        try {
+            var response = userManagementServiceImplementation.getAllCounselors(requesterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Counselors retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to counselors list: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselors"));
+        } catch (Exception e) {
+            log.error("Error retrieving counselors: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving counselors: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/counselors"));
+        }
+    }
+
     // ============ CUSTOMER ENDPOINTS ============
 
     @PostMapping("/customer/self-register")
@@ -728,6 +898,83 @@ public class UserManagementController {
         }
     }
 
+    /**
+     * Returns members whose membership expires within the next {@code days} days.
+     * Useful for the Renewal Management dashboard.
+     */
+    @GetMapping("/customers/expiring")
+    public ResponseEntity<?> getExpiringMembers(
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam Long requesterId) {
+        try {
+            var response = userManagementServiceImplementation.getExpiringMembers(days, requesterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Expiring members retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to expiring members: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/customers/expiring"));
+        } catch (Exception e) {
+            log.error("Error retrieving expiring members: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving expiring members: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/customers/expiring"));
+        }
+    }
+
+    /**
+     * Returns members at risk of churn and the associated reasons.
+     * Useful for the Churn Dashboard.
+     */
+    @GetMapping("/customers/at-risk")
+    public ResponseEntity<?> getAtRiskMembers(@RequestParam Long requesterId) {
+        try {
+            var response = userManagementServiceImplementation.getAtRiskMembers(requesterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "At-risk members retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to at-risk members: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/customers/at-risk"));
+        } catch (Exception e) {
+            log.error("Error retrieving at-risk members: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving at-risk members: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/customers/at-risk"));
+        }
+    }
+
+    /**
+     * GET /api/trainers/performance
+     * Returns aggregated performance metrics for all visible trainers, sorted by score.
+     */
+    @GetMapping("/trainers/performance")
+    public ResponseEntity<?> getTrainerPerformances(@RequestParam Long requesterId) {
+        try {
+            var response = userManagementServiceImplementation.getTrainerPerformances(requesterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Trainer performances retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to trainer performances: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/trainers/performance"));
+        } catch (Exception e) {
+            log.error("Error retrieving trainer performances: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving trainer performances: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/trainers/performance"));
+        }
+    }
+
     @PostMapping("/customer/{customerId}/activate")
     public ResponseEntity<?> activateCustomer(@PathVariable Long customerId, @RequestParam Long trainerId) {
         try {
@@ -747,6 +994,30 @@ public class UserManagementController {
                     .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
                             "Error activating customer: " + e.getMessage(),
                             java.time.LocalDateTime.now().toString(), "/api/users/customer/" + customerId + "/activate"));
+        }
+    }
+
+    @PutMapping("/{userId}/status")
+    public ResponseEntity<?> setUserStatus(@PathVariable Long userId,
+                                           @RequestParam boolean active,
+                                           @RequestParam Long updaterId) {
+        try {
+            userManagementServiceImplementation.setUserActiveStatus(userId, active, updaterId);
+            log.info("User {} status set to {} by {}", userId, active ? "ACTIVE" : "INACTIVE", updaterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    active ? "User activated successfully" : "User deactivated successfully", null,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized status change for user {}: {}", userId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/status"));
+        } catch (Exception e) {
+            log.error("Error changing user status: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error changing user status: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/" + userId + "/status"));
         }
     }
 
@@ -857,6 +1128,69 @@ public class UserManagementController {
                             java.time.LocalDateTime.now().toString(), "/api/users/me/workout-plan"));
         }
     }
+    @GetMapping("/me/profile")
+    public ResponseEntity<?> getMyProfile() {
+        try {
+            var response = userManagementServiceImplementation.getMyProfile();
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Profile retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/profile"));
+        } catch (Exception e) {
+            log.error("Error retrieving my profile: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving profile: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/profile"));
+        }
+    }
+
+    @PutMapping("/me/profile")
+    public ResponseEntity<?> updateMyProfile(@RequestBody MyProfileRequest request) {
+        try {
+            var response = userManagementServiceImplementation.updateMyProfile(request);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Profile updated successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/profile"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/profile"));
+        } catch (Exception e) {
+            log.error("Error updating my profile: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error updating profile: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/profile"));
+        }
+    }
+
+    @PostMapping("/me/onboarding-complete")
+    public ResponseEntity<?> completeOnboarding() {
+        try {
+            userManagementServiceImplementation.completeOnboarding();
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Onboarding marked complete", null, java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/onboarding-complete"));
+        } catch (Exception e) {
+            log.error("Error completing onboarding: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error completing onboarding: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/me/onboarding-complete"));
+        }
+    }
+
     @GetMapping("/reporting-options")
     public ResponseEntity<?> getReportingOptions(@RequestParam Role role,
                                                  @RequestParam(required = false) Long branchId,
@@ -877,6 +1211,80 @@ public class UserManagementController {
                     .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
                             "Error retrieving reporting options: " + e.getMessage(),
                             java.time.LocalDateTime.now().toString(), "/api/users/reporting-options"));
+        }
+    }
+
+    // ============ CORPORATE HR ENDPOINTS ============
+
+    @PutMapping("/corporate-hr/{id}")
+    public ResponseEntity<?> updateCorporateHr(@PathVariable Long id,
+                                               @Valid @RequestBody CreateCorporateHrRequest request,
+                                               @RequestParam Long updaterId, BindingResult bindingResult) {
+        try {
+            if (bindingResult.hasErrors() && !Boolean.TRUE.equals(request.getKeepPassword())) {
+                String errorMessage = bindingResult.getFieldError().getDefaultMessage();
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), errorMessage,
+                                java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr/" + id));
+            }
+
+            CorporateHrResponse response = userManagementServiceImplementation.updateCorporateHr(id, request, updaterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Corporate HR Account updated successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized Corporate HR update: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr/" + id));
+        } catch (Exception e) {
+            log.error("Error updating Corporate HR: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error updating Corporate HR account: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr/" + id));
+        }
+    }
+
+    @DeleteMapping("/corporate-hr/{id}")
+    public ResponseEntity<?> deleteCorporateHr(@PathVariable Long id, @RequestParam Long deleterId) {
+        try {
+            userManagementServiceImplementation.deleteCorporateHr(id, deleterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Corporate HR Account deleted successfully", null,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized Corporate HR deletion: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr/" + id));
+        } catch (Exception e) {
+            log.error("Error deleting Corporate HR: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error deleting Corporate HR account: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr/" + id));
+        }
+    }
+
+    @GetMapping("/corporate-hr")
+    public ResponseEntity<?> getAllCorporateHrs(@RequestParam Long requesterId) {
+        try {
+            var response = userManagementServiceImplementation.getAllCorporateHrs(requesterId);
+            return ResponseEntity.ok(new ApiSuccessResponse<>(HttpStatus.OK.value(),
+                    "Corporate HR accounts retrieved successfully", response,
+                    java.time.LocalDateTime.now().toString()));
+        } catch (SecurityException e) {
+            log.warn("Unauthorized access to corporate HR list: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr"));
+        } catch (Exception e) {
+            log.error("Error retrieving corporate HR accounts: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                            "Error retrieving corporate HR accounts: " + e.getMessage(),
+                            java.time.LocalDateTime.now().toString(), "/api/users/corporate-hr"));
         }
     }
 }

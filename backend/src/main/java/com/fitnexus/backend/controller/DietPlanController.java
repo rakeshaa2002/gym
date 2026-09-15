@@ -23,7 +23,7 @@ import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/diet-plans")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 @RequiredArgsConstructor
 @Slf4j
 public class DietPlanController {
@@ -78,7 +78,7 @@ public class DietPlanController {
             log.error("Error creating diet plan", e);
             return error(HttpStatus.INTERNAL_SERVER_ERROR, "/api/diet-plans", "Error creating diet plan: " + e.getMessage());
         }
-    }
+    }  
 
     @PutMapping("/{id}")
     public ResponseEntity<?> updateDietPlan(@PathVariable Long id, @RequestBody DietPlan request) {

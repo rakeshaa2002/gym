@@ -9,7 +9,37 @@ import Featureskey from "../api/Featureskey.json"
 import Landingfooter from '../../components/Landingfooter.jsx';
 import support from "/src/assets/images/landing/support.png"
 import {getImageUrl} from "../../utils/imageresolver.js"
-import * as TablerIcons from '@tabler/icons-react';
+import {
+  IconArtboard,
+  IconBrandBootstrap,
+  IconCalendar,
+  IconCloudUpload,
+  IconCode,
+  IconDevices2,
+  IconHelpOctagon,
+  IconLayout,
+  IconPalette,
+  IconPhoto,
+  IconSettings,
+  IconTable,
+} from '@tabler/icons-react';
+
+// Explicit map so only the icons used by Featuresdata are bundled
+// (a namespace import would pull in the entire ~5000-icon library).
+const featureIcons = {
+  IconArtboard,
+  IconBrandBootstrap,
+  IconCalendar,
+  IconCloudUpload,
+  IconCode,
+  IconDevices2,
+  IconHelpOctagon,
+  IconLayout,
+  IconPalette,
+  IconPhoto,
+  IconSettings,
+  IconTable,
+};
 
 export default function Landing() {
 
@@ -141,7 +171,7 @@ export default function Landing() {
                                 </div>
                             </Col>
                             {Featuresdata.map((feature, index) => {
-                                const TablerIcon = TablerIcons[feature.icon]; 
+                                const TablerIcon = featureIcons[feature.icon];
                                  return (
                                         <Col xl={3} lg={4} sm={6} key={index}>
                                         <div className="feature-grid">

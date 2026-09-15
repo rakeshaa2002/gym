@@ -69,9 +69,13 @@ export function AuthProvider({ children }) {
     let cancelled = false;
 
     const loadPermissions = async () => {
-      if (!isAuthenticated || !user?.role) {
-        setPermissionMap({});
-        setPermissionsLoading(false);
+      // When signed out, the bootstrap effect (on mount) and logout() are the
+      // ones that reset permission state. We must NOT flip permissionsLoading
+      // here during that window: on a page refresh this effect first runs with
+      // a stale isAuthenticated=false, and setting permissionsLoading=false with
+      // an empty map would let ProtectedRoute evaluate an authenticated user
+      // against zero permissions and wrongly redirect them to /error-page.
+      if (!isAuthenticated) {
         return;
       }
 
@@ -82,12 +86,12 @@ export function AuthProvider({ children }) {
         if (cancelled) return;
 
         const permissions = Array.isArray(response?.permissions) ? response.permissions : [];
-        setPermissionMap(buildPermissionMap(permissions));
+        setPermissionMap(buildPermissionMap(permissions, user?.role));
       } catch (error) {
         if (cancelled) return;
-        setPermissionMap(getDefaultRolePermissions(normalizeRole(user.role)));
+        setPermissionMap(getDefaultRolePermissions(normalizeRole(user?.role)));
         if (import.meta.env.DEV) {
-          console.warn("Falling back to default permissions for role", user.role, error);
+          console.warn("Falling back to default permissions for role", user?.role, error);
         }
       } finally {
         if (!cancelled) {

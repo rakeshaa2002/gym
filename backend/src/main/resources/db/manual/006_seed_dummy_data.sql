@@ -8,8 +8,10 @@
 
 BEGIN;
 
-CREATE SEQUENCE IF NOT EXISTS user_accounts_id_seq OWNED BY user_accounts.id;
-ALTER TABLE user_accounts ALTER COLUMN id SET DEFAULT nextval('user_accounts_id_seq');
+-- NOTE: user_accounts.id is a GENERATED ... AS IDENTITY column under the current
+-- Hibernate mapping (GenerationType.IDENTITY). Attaching a manual sequence default
+-- to it errors ("column id is an identity column"), so the original two lines that
+-- did so have been removed. Inserts below omit id and let the identity supply it.
 
 -- Rename older realistic seed records if this script was run before.
 UPDATE head_offices SET name = 'Head Office 1', location = 'Location 1', address = 'Address 1', phone = '+910000000001', email = 'headoffice1@fitnexus.test', status = 'ACTIVE', updated_at = NOW() WHERE name = 'FitNexus Corporate HQ' OR email = 'hq@fitnexus.test';

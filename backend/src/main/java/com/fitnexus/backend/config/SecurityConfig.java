@@ -35,11 +35,18 @@ public class SecurityConfig {
                 .cors(cors -> {})
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/api/webhooks/**").permitAll()
+                        // Fingerprint terminal webhook — guarded by the X-Device-Key header, not JWT.
+                        .requestMatchers(HttpMethod.POST, "/api/attendance/checkin").permitAll()
                         .requestMatchers("/api/users/**").authenticated()
                         .requestMatchers("/api/uploads/**").authenticated()
                         .requestMatchers("/uploads/**").permitAll()
+                        .requestMatchers("/api/calls/**").authenticated()
                         .requestMatchers("/api/org/**").authenticated()
+                        // WebSocket / STOMP endpoints — authenticated via JWT in the HTTP upgrade
+                        .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -61,7 +68,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        config.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "http://localhost:3000",
+                "http://gym.infitoolz.com",
+                "https://gym.infitoolz.com"
+        ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

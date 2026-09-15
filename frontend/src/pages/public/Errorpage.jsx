@@ -1,5 +1,4 @@
 import React from 'react';
-import * as TablerIcons from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 
 import errorimg from '/src/assets/images/error-img.png';

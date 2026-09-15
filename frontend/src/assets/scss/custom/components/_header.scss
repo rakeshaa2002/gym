@@ -155,9 +155,11 @@
         }
         .navnotification-drop{
             min-width: 345px;
+            max-width: 360px;
             ul {
                 height: 395px;
                 overflow-y: auto;
+                overflow-x: hidden;
                 padding: 20px;
                 li{
                     border: none !important;
@@ -168,14 +170,34 @@
                         justify-content: space-between;
                         align-items: center;
                         padding: 12px;
+                        gap: 8px;
+                        // The text group must be allowed to shrink so the message
+                        // wraps inside the card instead of overflowing the box.
+                        > .d-flex{
+                            min-width: 0;
+                            flex: 1 1 auto;
+                        }
                         .icon-nav{
                             width: 50px;
                             height: 50px;
                             margin-right: 10px;
+                            flex-shrink: 0;
                             img{
                                 width: 100%;
                                 height: 100%;
                             }
+                        }
+                        .media-body{
+                            min-width: 0;
+                            h6,
+                            small{
+                                white-space: normal;
+                                overflow-wrap: anywhere;
+                                word-break: break-word;
+                            }
+                        }
+                        > svg{
+                            flex-shrink: 0;
                         }
                         .badge{
                             padding: 6px 8px;

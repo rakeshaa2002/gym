@@ -77,6 +77,14 @@ public class CreateCustomerByTrainerRequest {
 
     private Long teamId;
     private Long assignedTrainerId;
+
+    // Photo (required in the UI) and ID proof are uploaded first; the client sends
+    // back the stored file paths here.
+    private String photoPath;
+    private String idProofPath;
+    private Double bodyFat;
+    private Boolean isFrozen;
+    private String referredBy;
 }
 
 

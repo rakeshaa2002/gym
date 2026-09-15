@@ -16,6 +16,19 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     assetsDir: 'assets', // optional
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        // Split heavy third-party libraries into their own long-cached chunks
+        // so a page only downloads the vendors it actually uses.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-charts': ['apexcharts', 'react-apexcharts', 'echarts', 'echarts-for-react'],
+          'vendor-calendar': ['@fullcalendar/core', '@fullcalendar/react', '@fullcalendar/daygrid', '@fullcalendar/timegrid', '@fullcalendar/interaction'],
+          'vendor-ui': ['react-bootstrap', 'bootstrap', 'sweetalert2', 'react-slick', 'slick-carousel', 'simplebar-react'],
+        },
+      },
+    },
   },
   server: {
     port: 3000,

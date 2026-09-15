@@ -9,11 +9,14 @@ import lombok.ToString;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @Entity
 @Table(name = "user_accounts")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Users {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -89,6 +92,14 @@ public class Users {
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
 
+    /** Updated whenever the user polls the chat; drives online / last-seen status. */
+    @Column(name = "last_seen_at")
+    private LocalDateTime lastSeenAt;
+
+    /** Set when the member finishes the onboarding wizard; null until then. */
+    @Column(name = "onboarding_completed_at")
+    private LocalDateTime onboardingCompletedAt;
+
     @Column(name = "head_office_id")
     private Long headOfficeId;
 
@@ -103,6 +114,20 @@ public class Users {
 
     @Column(name = "designation_id")
     private Long designationId;
+
+    // Biometric identifier enrolled on the fingerprint terminal; the device sends
+    // this back on a match so we can resolve the member for attendance.
+    @Column(name = "fingerprint_id", unique = true, length = 100)
+    private String fingerprintId;
+
+    // Stable random token encoded in the member's personal check-in QR code.
+    @Column(name = "qr_token", unique = true, length = 64)
+    private String qrToken;
+
+    // columnDefinition includes a default so the NOT NULL column can be added to
+    // an already-populated table (Postgres rejects NOT NULL adds without a default).
+    @Column(name = "email_verified", nullable = false, columnDefinition = "boolean default false")
+    private Boolean emailVerified = false;
 
     @PrePersist
     protected void onCreate() {

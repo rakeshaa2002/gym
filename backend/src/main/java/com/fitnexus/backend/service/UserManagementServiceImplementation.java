@@ -5,6 +5,7 @@ import com.fitnexus.backend.entity.*;
 import com.fitnexus.backend.exception.InvalidOperationException;
 import com.fitnexus.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class UserManagementServiceImplementation implements UserManagementService {
 
     private final UserRepository userRepository;
@@ -27,11 +29,22 @@ public class UserManagementServiceImplementation implements UserManagementServic
     private final AdminRepository adminRepository;
     private final ManagerRepository managerRepository;
     private final TrainerRepository trainerRepository;
-    private final TeamRepository teamRepository;
+    private final CounselorRepository counselorRepository;
     private final FitnessUserRepository fitnessUserRepository;
     private final DietPlanRepository dietPlanRepository;
     private final WorkoutPlanRepository workoutPlanRepository;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
+    // Member-owned records that must be cleared before a member can be deleted
+    // (their FKs would otherwise block the delete).
+    private final AttendanceRepository attendanceRepository;
+    private final GoalRepository goalRepository;
+    private final ProgressEntryRepository progressEntryRepository;
+    private final ChatMessageRepository chatMessageRepository;
+    private final NotificationRepository notificationRepository;
+    private final UserWorkoutScheduleRepository userWorkoutScheduleRepository;
+    private final MembershipRequestRepository membershipRequestRepository;
+    private final TransactionRepository transactionRepository;
 
     private int getRoleLevel(Role role) {
         switch (role) {
@@ -42,6 +55,7 @@ public class UserManagementServiceImplementation implements UserManagementServic
             case MANAGER:
                 return 3;
             case TRAINER:
+            case COUNSELOR:
                 return 2;
             case USER:
                 return 1;
@@ -88,6 +102,7 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 account.setManager(account);
                 break;
             case TRAINER:
+            case COUNSELOR:
                 account.setAdmin(creator.getAdmin() != null ? creator.getAdmin() : (creator.getRole() == Role.ADMIN ? creator : null));
                 account.setManager(creator.getManager() != null ? creator.getManager() : (creator.getRole() == Role.MANAGER ? creator : null));
                 account.setTrainer(account);
@@ -205,7 +220,9 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 .orElseThrow(() -> new SecurityException("SuperAdmin not found"));
         Users account = superAdmin.getAccount();
         account.setEmail(request.getEmail());
-        account.setPassword(passwordEncoder.encode(request.getPassword()));
+        if (!Boolean.TRUE.equals(request.getKeepPassword())) {
+            account.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
         account.setName(buildDisplayName(request.getFirstName(), request.getLastName()));
         superAdmin.setFirstName(request.getFirstName());
         superAdmin.setLastName(normalizeOptional(request.getLastName()));
@@ -254,6 +271,9 @@ public class UserManagementServiceImplementation implements UserManagementServic
         Admin admin = adminRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin not found"));
         admin.getAccount().setName(buildDisplayName(request.getFirstName(), request.getLastName()));
+        if (!Boolean.TRUE.equals(request.getKeepPassword())) {
+            admin.getAccount().setPassword(passwordEncoder.encode(request.getPassword()));
+        }
         copyAdminFields(admin, request);
         return mapAdminToResponse(adminRepository.save(admin));
     }
@@ -299,6 +319,9 @@ public class UserManagementServiceImplementation implements UserManagementServic
         Manager manager = managerRepository.findById(managerId)
                 .orElseThrow(() -> new RuntimeException("Manager not found"));
         manager.getAccount().setName(buildDisplayName(request.getFirstName(), request.getLastName()));
+        if (!Boolean.TRUE.equals(request.getKeepPassword())) {
+            manager.getAccount().setPassword(passwordEncoder.encode(request.getPassword()));
+        }
         copyManagerFields(manager, request);
         return mapManagerToResponse(managerRepository.save(manager));
     }
@@ -344,6 +367,9 @@ public class UserManagementServiceImplementation implements UserManagementServic
         Trainer trainer = trainerRepository.findById(trainerId)
                 .orElseThrow(() -> new RuntimeException("Trainer not found"));
         trainer.getAccount().setName(buildDisplayName(request.getFirstName(), request.getLastName()));
+        if (!Boolean.TRUE.equals(request.getKeepPassword())) {
+            trainer.getAccount().setPassword(passwordEncoder.encode(request.getPassword()));
+        }
         copyTrainerFields(trainer, request);
         return mapTrainerToResponse(trainerRepository.save(trainer));
     }
@@ -362,6 +388,74 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 .map(this::mapTrainerToResponse)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    public CounselorResponse createCounselor(CreateCounselorRequest request, Long creatorId) {
+        checkCreatePermission(creatorId, Role.COUNSELOR);
+        Users creator = getAccount(creatorId, "Creator");
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("Email already exists");
+        }
+        Counselor counselor = new Counselor();
+        counselor.setAccount(createAccount(request.getEmail(), request.getPassword(), request.getFirstName(), request.getLastName(), Role.COUNSELOR, creator));
+        counselor.setFirstName(request.getFirstName());
+        counselor.setLastName(normalizeOptional(request.getLastName()));
+        counselor.setPhone(request.getPhone());
+        return mapCounselorToResponse(counselorRepository.save(counselor));
+    }
+
+    @Override
+    public CounselorResponse getCounselor(Long counselorId, Long requesterId) {
+        checkViewPermission(requesterId, counselorId);
+        return mapCounselorToResponse(counselorRepository.findById(counselorId)
+                .orElseThrow(() -> new RuntimeException("Counselor not found")));
+    }
+
+    @Override
+    public CounselorResponse updateCounselor(Long counselorId, CreateCounselorRequest request, Long updaterId) {
+        checkUpdatePermission(updaterId, counselorId);
+        Counselor counselor = counselorRepository.findById(counselorId)
+                .orElseThrow(() -> new RuntimeException("Counselor not found"));
+        counselor.getAccount().setName(buildDisplayName(request.getFirstName(), request.getLastName()));
+        if (!Boolean.TRUE.equals(request.getKeepPassword())) {
+            counselor.getAccount().setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+        counselor.setFirstName(request.getFirstName());
+        counselor.setLastName(normalizeOptional(request.getLastName()));
+        counselor.setPhone(request.getPhone());
+        return mapCounselorToResponse(counselorRepository.save(counselor));
+    }
+
+    @Override
+    public void deleteCounselor(Long counselorId, Long deleterId) {
+        checkDeletePermission(deleterId, counselorId);
+        counselorRepository.delete(counselorRepository.findById(counselorId)
+                .orElseThrow(() -> new RuntimeException("Counselor not found")));
+    }
+
+    @Override
+    public List<CounselorResponse> getAllCounselors(Long requesterId) {
+        ensureRequesterCanList(requesterId, Role.COUNSELOR, "counselors");
+        return counselorRepository.findAll().stream()
+                .map(this::mapCounselorToResponse)
+                .collect(Collectors.toList());
+    }
+
+    private CounselorResponse mapCounselorToResponse(Counselor counselor) {
+        CounselorResponse response = new CounselorResponse();
+        response.setId(counselor.getId());
+        response.setEmail(counselor.getAccount().getEmail());
+        response.setFirstName(counselor.getFirstName());
+        response.setLastName(counselor.getLastName());
+        response.setPhone(counselor.getPhone());
+        response.setIsActive(counselor.getAccount().getIsActive());
+        response.setJoinDate(counselor.getJoinDate());
+        response.setCreatedAt(counselor.getAccount().getCreatedAt());
+        response.setUpdatedAt(counselor.getAccount().getUpdatedAt());
+        return response;
+    }
+
+
 
 
     @Override
@@ -476,6 +570,9 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 request.getLastName() != null ? request.getLastName() : customer.getLastName()
         );
         account.setName(updatedName);
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            account.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+        }
         applyOrgFields(account, request.getHeadOfficeId(), request.getBranchId(), request.getDepartmentId(), request.getTeamId(), request.getDesignationId());
         Long assignedTrainerAccountId = request.getAssignedTrainerId();
         if (assignedTrainerAccountId == null) {
@@ -498,7 +595,13 @@ public class UserManagementServiceImplementation implements UserManagementServic
             customer.setLastName(normalizeOptional(request.getLastName()));
         }
         customer.setDetailsCompleted(true);
-        return mapCustomerToResponse(fitnessUserRepository.save(customer));
+        CustomerResponse saved = mapCustomerToResponse(fitnessUserRepository.save(customer));
+        // Notify the member when an admin (not the member themselves) edits their details.
+        if (!updaterId.equals(customerId)) {
+            notificationService.createForUser(account, "INFO", "Profile updated",
+                    "Your details were updated by " + updater.getName(), "/profile");
+        }
+        return saved;
     }
 
     @Override
@@ -511,8 +614,20 @@ public class UserManagementServiceImplementation implements UserManagementServic
     @Override
     public void deleteCustomer(Long customerId, Long deleterId) {
         checkDeletePermission(deleterId, customerId);
-        fitnessUserRepository.delete(fitnessUserRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found")));
+        FitnessUser customer = fitnessUserRepository.findById(customerId)
+                .orElseThrow(() -> new RuntimeException("Customer not found"));
+
+        // Clear member-owned records first; their foreign keys would otherwise
+        // block the delete (the cause of the previous "could not execute statement").
+        attendanceRepository.deleteByUserId(customerId);
+        goalRepository.deleteByUserId(customerId);
+        progressEntryRepository.deleteByUserId(customerId);
+        chatMessageRepository.deleteByMemberId(customerId);
+        notificationRepository.deleteByRecipientId(customerId);
+        userWorkoutScheduleRepository.deleteByUserId(customerId);
+        membershipRequestRepository.deleteByMemberId(customerId);
+
+        fitnessUserRepository.delete(customer);
     }
 
     @Override
@@ -569,7 +684,101 @@ public class UserManagementServiceImplementation implements UserManagementServic
         customer.getAccount().setManager(trainerAccount.getManager() != null ? trainerAccount.getManager() : (trainerAccount.getRole() == Role.MANAGER ? trainerAccount : null));
         customer.getAccount().setTrainer(trainerAccount);
         customer.setAssignedTrainer(trainer);
-        return mapCustomerToResponse(fitnessUserRepository.save(customer));
+        FitnessUser saved = fitnessUserRepository.save(customer);
+        // Let the approved member know they can now sign in.
+        notificationService.createForUser(saved.getAccount(), "INFO", "Account activated",
+                "Your account has been approved — you can now sign in and start training.", "/");
+        return mapCustomerToResponse(saved);
+    }
+
+    @Override
+    public CorporateHrResponse createCorporateHr(CreateCorporateHrRequest request, Long creatorId) {
+        checkCreatePermission(creatorId, Role.CORPORATE_HR);
+        Users creator = getAccount(creatorId, "Creator");
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("Email already exists");
+        }
+        
+        Users account = createAccount(request.getEmail(), request.getPassword(), request.getCompanyName(), null, Role.CORPORATE_HR, creator);
+        account = userRepository.save(account);
+        
+        return CorporateHrResponse.builder()
+                .id(account.getId())
+                .companyName(account.getName())
+                .email(account.getEmail())
+                .role(account.getRole())
+                .active(account.getIsActive())
+                .createdAt(account.getCreatedAt())
+                .updatedAt(account.getUpdatedAt())
+                .build();
+    }
+
+    @Override
+    public CorporateHrResponse updateCorporateHr(Long corporateHrId, CreateCorporateHrRequest request, Long updaterId) {
+        checkUpdatePermission(updaterId, corporateHrId);
+        Users account = userRepository.findById(corporateHrId)
+                .orElseThrow(() -> new RuntimeException("Corporate HR not found"));
+        
+        account.setName(request.getCompanyName());
+        if (!Boolean.TRUE.equals(request.getKeepPassword()) && request.getPassword() != null && !request.getPassword().isBlank()) {
+            account.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+        
+        account = userRepository.save(account);
+        
+        return CorporateHrResponse.builder()
+                .id(account.getId())
+                .companyName(account.getName())
+                .email(account.getEmail())
+                .role(account.getRole())
+                .active(account.getIsActive())
+                .createdAt(account.getCreatedAt())
+                .updatedAt(account.getUpdatedAt())
+                .build();
+    }
+
+    @Override
+    public void deleteCorporateHr(Long corporateHrId, Long deleterId) {
+        checkDeletePermission(deleterId, corporateHrId);
+        Users account = userRepository.findById(corporateHrId)
+                .orElseThrow(() -> new RuntimeException("Corporate HR not found"));
+        userRepository.delete(account);
+    }
+
+    @Override
+    public List<CorporateHrResponse> getAllCorporateHrs(Long requesterId) {
+        ensureRequesterCanList(requesterId, Role.CORPORATE_HR, "corporate hrs");
+        return userRepository.findByRole(Role.CORPORATE_HR).stream()
+                .map(account -> CorporateHrResponse.builder()
+                        .id(account.getId())
+                        .companyName(account.getName())
+                        .email(account.getEmail())
+                        .role(account.getRole())
+                        .active(account.getIsActive())
+                        .createdAt(account.getCreatedAt())
+                        .updatedAt(account.getUpdatedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void setUserActiveStatus(Long userId, boolean active, Long updaterId) {
+        // Role entities share their primary key with the account (@MapsId), so the
+        // row id from the table IS the account id — operate on it directly.
+        checkUpdatePermission(updaterId, userId);
+        Users account = getAccount(userId, "User");
+        account.setIsActive(active);
+        // USER accounts also need approval to log in; activating from here approves them
+        // so the Status toggle works as a single "enable login" control.
+        if (active && account.getRole() == Role.USER) {
+            account.setIsApproved(true);
+        }
+        userRepository.save(account);
+        // Let an activated member know they can now sign in (skip self-toggles).
+        if (active && account.getRole() == Role.USER && !updaterId.equals(userId)) {
+            notificationService.createForUser(account, "INFO", "Account activated",
+                    "Your account has been approved — you can now sign in and start training.", "/");
+        }
     }
 
     @Override
@@ -594,6 +803,8 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 .orElseThrow(() -> new InvalidOperationException("Diet plan not found"));
         targetAccount.setAssignedDietPlan(dietPlan);
         fitnessUserRepository.save(customer);
+        notificationService.createForUser(targetAccount, "DIET", "New diet plan assigned",
+                dietPlan.getName() + " was assigned to you by " + assigner.getName(), "/dietplan");
         return dietPlan;
     }
 
@@ -631,6 +842,8 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 .orElseThrow(() -> new InvalidOperationException("Workout plan not found"));
         targetAccount.setAssignedWorkoutPlan(workoutPlan);
         fitnessUserRepository.save(customer);
+        notificationService.createForUser(targetAccount, "WORKOUT", "New workout plan assigned",
+                workoutPlan.getName() + " was assigned to you by " + assigner.getName(), "/workout-detail");
         return workoutPlan;
     }
 
@@ -644,6 +857,76 @@ public class UserManagementServiceImplementation implements UserManagementServic
         }
 
         return workoutPlanRepository.findById(assignedWorkoutPlan.getId()).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public MyProfileResponse getMyProfile() {
+        Users user = getAuthenticatedAccount();
+        FitnessUser fitness = fitnessUserRepository.findById(user.getId()).orElse(null);
+        return buildProfileResponse(user, fitness);
+    }
+
+    /** Marks the signed-in member's onboarding as finished (drives the staff notification). */
+    public void completeOnboarding() {
+        Users user = getAuthenticatedAccount();
+        user.setOnboardingCompletedAt(LocalDateTime.now());
+        userRepository.save(user);
+    }
+
+    public MyProfileResponse updateMyProfile(MyProfileRequest request) {
+        Users user = getAuthenticatedAccount();
+        if (request == null) {
+            throw new IllegalArgumentException("Request body is required");
+        }
+
+        if (request.getName() != null && !request.getName().isBlank()) {
+            user.setName(request.getName().trim());
+            userRepository.save(user);
+        }
+
+        FitnessUser fitness = fitnessUserRepository.findById(user.getId()).orElse(null);
+        if (fitness == null && user.getRole() == Role.USER) {
+            fitness = new FitnessUser();
+            fitness.setAccount(user);
+        }
+
+        if (fitness != null) {
+            fitness.setWeight(request.getWeight());
+            fitness.setHeight(request.getHeight());
+            fitness.setAge(request.getAge());
+            fitness.setGender(request.getGender());
+            fitness.setDateOfBirth(request.getDateOfBirth() != null ? request.getDateOfBirth().atStartOfDay() : null);
+            fitness.setBloodGroup(request.getBloodGroup());
+            fitness.setPhone(request.getPhone());
+            fitness.setAddress(request.getAddress());
+            fitness.setCity(request.getCity());
+            fitness.setBio(request.getBio());
+            fitness.setFitnessGoals(request.getFitnessGoals());
+            fitness = fitnessUserRepository.save(fitness);
+        }
+
+        return buildProfileResponse(user, fitness);
+    }
+
+    private MyProfileResponse buildProfileResponse(Users user, FitnessUser fitness) {
+        return new MyProfileResponse(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getRole() == null ? null : user.getRole().name(),
+                fitness == null ? null : fitness.getWeight(),
+                fitness == null ? null : fitness.getHeight(),
+                fitness == null ? null : fitness.getAge(),
+                fitness == null ? null : fitness.getGender(),
+                fitness == null || fitness.getDateOfBirth() == null ? null : fitness.getDateOfBirth().toLocalDate(),
+                fitness == null ? null : fitness.getBloodGroup(),
+                fitness == null ? null : fitness.getPhone(),
+                fitness == null ? null : fitness.getAddress(),
+                fitness == null ? null : fitness.getCity(),
+                fitness == null ? null : fitness.getBio(),
+                fitness == null ? null : fitness.getFitnessGoals(),
+                fitness != null
+        );
     }
 
     private List<FitnessUser> getVisibleCustomersForRequester(Users requester) {
@@ -988,6 +1271,11 @@ public class UserManagementServiceImplementation implements UserManagementServic
         customer.setMedicalConditions(request.getMedicalConditions());
         customer.setEmergencyContact(request.getEmergencyContact());
         customer.setEmergencyPhone(request.getEmergencyPhone());
+        customer.setPhotoPath(request.getPhotoPath());
+        customer.setIdProofPath(request.getIdProofPath());
+        customer.setBodyFat(request.getBodyFat());
+        customer.setIsFrozen(request.getIsFrozen() != null ? request.getIsFrozen() : false);
+        customer.setReferredBy(request.getReferredBy());
     }
 
     private void copyCustomerFields(FitnessUser customer, UpdateCustomerDetailsRequest request) {
@@ -1002,6 +1290,17 @@ public class UserManagementServiceImplementation implements UserManagementServic
         customer.setMedicalConditions(request.getMedicalConditions());
         customer.setEmergencyContact(request.getEmergencyContact());
         customer.setEmergencyPhone(request.getEmergencyPhone());
+        customer.setBodyFat(request.getBodyFat());
+        customer.setIsFrozen(request.getIsFrozen() != null ? request.getIsFrozen() : false);
+        customer.setReferredBy(request.getReferredBy());
+        // Only overwrite documents when the update actually carries a new path, so
+        // an edit that doesn't re-upload keeps the existing photo / ID proof.
+        if (request.getPhotoPath() != null && !request.getPhotoPath().isBlank()) {
+            customer.setPhotoPath(request.getPhotoPath());
+        }
+        if (request.getIdProofPath() != null && !request.getIdProofPath().isBlank()) {
+            customer.setIdProofPath(request.getIdProofPath());
+        }
     }
 
     private SuperAdminResponse mapSuperAdminToResponse(SuperAdmin superAdmin) {
@@ -1258,10 +1557,189 @@ public class UserManagementServiceImplementation implements UserManagementServic
                 customer.getAssignedTrainer() != null ? customer.getAssignedTrainer().getAccount().getId() : null,
                 customer.getAssignedTrainer() != null ? customer.getAssignedTrainer().getAccount().getName() : null,
                 account.getTrainer() != null ? account.getTrainer().getId() : null,
-                account.getCreatedBy() != null ? account.getCreatedBy().getId() : null
+                account.getCreatedBy() != null ? account.getCreatedBy().getId() : null,
+                customer.getPhotoPath(),
+                customer.getIdProofPath(),
+                account.getAssignedDietPlan() != null ? account.getAssignedDietPlan().getId() : null,
+                account.getAssignedDietPlan() != null ? account.getAssignedDietPlan().getName() : null,
+                account.getAssignedWorkoutPlan() != null ? account.getAssignedWorkoutPlan().getId() : null,
+                account.getAssignedWorkoutPlan() != null ? account.getAssignedWorkoutPlan().getName() : null,
+                customer.getBodyFat(),
+                customer.getIsFrozen(),
+                customer.getReferredBy(),
+                customer.getMembershipExpiry(),
+                customer.getMembershipPlanRef() != null ? customer.getMembershipPlanRef().getName() : (customer.getMembershipPlan() != null ? customer.getMembershipPlan() : "BASIC"),
+                customer.getMembershipPlanRef() != null ? customer.getMembershipPlanRef().getId() : null,
+                customer.getAccessStartTime() != null ? customer.getAccessStartTime().toString() : null,
+                customer.getAccessEndTime() != null ? customer.getAccessEndTime().toString() : null
         );
     }
+
+    @Override
+    public List<CustomerResponse> getExpiringMembers(int days, Long requesterId) {
+        Users requester = getRequesterOrThrow(requesterId);
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDate cutoff = today.plusDays(days);
+        return getVisibleCustomersForRequester(requester).stream()
+                .filter(fu -> fu.getMembershipExpiry() != null
+                        && !fu.getMembershipExpiry().isBefore(today)
+                        && !fu.getMembershipExpiry().isAfter(cutoff))
+                .sorted(java.util.Comparator.comparing(FitnessUser::getMembershipExpiry))
+                .map(this::mapCustomerToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<AtRiskMemberResponse> getAtRiskMembers(Long requesterId) {
+        Users requester = getRequesterOrThrow(requesterId);
+        List<FitnessUser> customers = getVisibleCustomersForRequester(requester);
+        List<AtRiskMemberResponse> atRiskMembers = new java.util.ArrayList<>();
+        java.time.LocalDate today = java.time.LocalDate.now();
+
+        for (FitnessUser fu : customers) {
+            List<String> reasons = new java.util.ArrayList<>();
+
+            // 1. Not visited in 10 days
+            java.util.Optional<Attendance> lastAttendance = attendanceRepository.findFirstByUserOrderByCheckInTimeDesc(fu.getAccount());
+            if (lastAttendance.isEmpty()) {
+                 reasons.add("Never visited");
+            } else {
+                 java.time.LocalDate lastVisitDate = lastAttendance.get().getCheckInTime().toLocalDate();
+                 if (java.time.temporal.ChronoUnit.DAYS.between(lastVisitDate, today) >= 10) {
+                     reasons.add("Not visited in 10 days");
+                 }
+            }
+
+            // 2. Workout completion below 30%
+            // Count total schedules and completed schedules for the user
+            List<UserWorkoutSchedule> schedules = userWorkoutScheduleRepository.findByUser_IdOrderByStartDateTimeAsc(fu.getAccount().getId());
+            if (!schedules.isEmpty()) {
+                long completed = schedules.stream()
+                        .filter(s -> "COMPLETED".equalsIgnoreCase(s.getCompletionStatus()))
+                        .count();
+                double completionRate = (double) completed / schedules.size() * 100;
+                if (completionRate < 30.0) {
+                    reasons.add(String.format("Workout completion below 30%% (%.0f%%)", completionRate));
+                }
+            }
+
+            // 3. Membership ending soon (within 15 days)
+            if (fu.getMembershipExpiry() != null) {
+                 if (fu.getMembershipExpiry().isBefore(today)) {
+                     reasons.add("Membership expired");
+                 } else if (java.time.temporal.ChronoUnit.DAYS.between(today, fu.getMembershipExpiry()) <= 15) {
+                     reasons.add("Membership ending soon");
+                 }
+            }
+
+            AtRiskMemberResponse response = new AtRiskMemberResponse(
+                    fu.getAccount().getId(),
+                    fu.getFirstName(),
+                    fu.getLastName(),
+                    fu.getAccount().getEmail(),
+                    fu.getPhone(),
+                    reasons
+            );
+            atRiskMembers.add(response);
+        }
+        return atRiskMembers;
+    }
+
+    @Override
+    public void engageAtRiskMember(Long customerId, Long requesterId, String message) {
+        Users requester = getRequesterOrThrow(requesterId);
+        FitnessUser customer = fitnessUserRepository.findByAccount_Id(customerId)
+                .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
+
+        // Simulate sending WhatsApp message
+        log.info("Manual WhatsApp from {} to {}: {}",
+                requester.getEmail(),
+                customer.getPhone() != null ? customer.getPhone() : customer.getAccount().getEmail(),
+                message);
+
+        // Optionally save a notification or log history in database (simulated here)
+    }
+
+    public java.util.List<TrainerPerformanceResponse> getTrainerPerformances(Long requesterId) {
+        Users requester = getRequesterOrThrow(requesterId);
+        java.time.LocalDate thirtyDaysAgo = java.time.LocalDate.now().minusDays(30);
+
+        // Get visible trainers for the requester
+        java.util.List<com.fitnexus.backend.entity.Trainer> trainers;
+        switch (requester.getRole()) {
+            case SUPER_ADMIN -> trainers = trainerRepository.findAll();
+            case ADMIN -> trainers = trainerRepository.findByAccount_Admin_Id(requester.getId());
+            default -> trainers = java.util.List.of();
+        }
+
+        java.util.List<TrainerPerformanceResponse> result = new java.util.ArrayList<>();
+
+        for (com.fitnexus.backend.entity.Trainer trainer : trainers) {
+            // Assigned members
+            java.util.List<com.fitnexus.backend.entity.FitnessUser> assignedUsers =
+                    fitnessUserRepository.findByAssignedTrainer_Account_Id(trainer.getAccount().getId());
+
+            int totalAssigned = assignedUsers.size();
+
+            if (totalAssigned == 0) {
+                // Still include the trainer with zero stats
+                result.add(new TrainerPerformanceResponse(
+                        trainer.getAccount().getId(),
+                        trainer.getFirstName() + " " + (trainer.getLastName() != null ? trainer.getLastName() : ""),
+                        0, 0, 0, 0.0,
+                        trainer.getRating() != null ? trainer.getRating() : 0.0,
+                        0, 0));
+                continue;
+            }
+
+            java.util.List<Long> memberAccountIds = assignedUsers.stream()
+                    .map(fu -> fu.getAccount().getId())
+                    .collect(java.util.stream.Collectors.toList());
+
+            // Attendance % — how many distinct members attended in last 30 days
+            long attendedCount = attendanceRepository.countDistinctUsersByUserIdInAndDateAfter(memberAccountIds, thirtyDaysAgo);
+            int attendancePct = totalAssigned > 0 ? (int) Math.round((attendedCount * 100.0) / totalAssigned) : 0;
+
+            // Retention % — active members / total members
+            long activeCount = assignedUsers.stream()
+                    .filter(fu -> Boolean.TRUE.equals(fu.getAccount().getIsActive()))
+                    .count();
+            int retentionPct = totalAssigned > 0 ? (int) Math.round((activeCount * 100.0) / totalAssigned) : 0;
+
+            // Revenue — all-time sum of transactions for these members
+            double revenue = transactionRepository.sumAmountByMemberIdIn(memberAccountIds);
+
+            // Transformations — distinct members with progress entries
+            long transformations = progressEntryRepository.countDistinctUserByUserIdIn(memberAccountIds);
+
+            // Rating
+            double rating = trainer.getRating() != null ? trainer.getRating() : 0.0;
+
+            // Composite score: (attendance + retention) / 2
+            int score = (attendancePct + retentionPct) / 2;
+
+            String name = trainer.getFirstName() + " " + (trainer.getLastName() != null ? trainer.getLastName() : "");
+
+            result.add(new TrainerPerformanceResponse(
+                    trainer.getAccount().getId(),
+                    name.trim(),
+                    totalAssigned,
+                    attendancePct,
+                    retentionPct,
+                    revenue,
+                    rating,
+                    (int) transformations,
+                    score
+            ));
+        }
+
+        // Sort by performance score descending
+        result.sort((a, b) -> Integer.compare(b.getPerformanceScore(), a.getPerformanceScore()));
+        return result;
+    }
 }
+
+
 
 
 

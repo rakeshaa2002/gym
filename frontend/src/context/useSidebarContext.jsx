@@ -1,27 +1,25 @@
 // src/context/SidebarContext.js
-import React, { createContext, useState, useContext, useEffect } from 'react';
+// Sidebar is always in compact (icon-only) mode. The flyout panel handles submenus.
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 const SidebarContext = createContext();
 
 export const useSidebarContext = () => useContext(SidebarContext);
 
 export const SidebarProvider = ({ children }) => {
-  const [isCompact, setIsCompact] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
-  const toggleSidebar = () => {
-    setIsCompact(prev => !prev);
-  };
-
+  // Always compact — the narrow icon rail is the permanent layout.
+  // The flyout panel (in Sidebar.jsx) handles submenus on click.
   useEffect(() => {
-    if (isCompact) {
-      document.body.setAttribute('data-bs-sidebar', 'compact');
-    } else {
-      document.body.removeAttribute('data-bs-sidebar');
-    }
-  }, [isCompact]);
+    document.body.setAttribute('data-bs-sidebar', 'compact');
+  }, []);
+
+  const toggleSidebar = () => setIsOpen(prev => !prev);
+  const closeSidebar = () => setIsOpen(false);
 
   return (
-    <SidebarContext.Provider value={{ isCompact, toggleSidebar }}>
+    <SidebarContext.Provider value={{ isCompact: true, isOpen, toggleSidebar, closeSidebar }}>
       {children}
     </SidebarContext.Provider>
   );

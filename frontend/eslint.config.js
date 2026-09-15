@@ -7,6 +7,11 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 export default [
   { ignores: ['dist'] },
   {
+    // Build/config files run in Node, so allow Node globals (__dirname, process, …).
+    files: ['**/*.config.js', 'vite.config.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2020,
@@ -38,6 +43,11 @@ export default [
 
       // 🔧 Overrides
       'react/jsx-no-target-blank': 'off',
+      // This is a plain-JS React app that doesn't use PropTypes anywhere, so the
+      // prop-types rule from react/recommended only produces noise. Turn it off.
+      'react/prop-types': 'off',
+      // Apostrophes/quotes in JSX text render fine; this rule is purely stylistic.
+      'react/no-unescaped-entities': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

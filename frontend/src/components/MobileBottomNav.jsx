@@ -55,6 +55,15 @@ function IconProfile() {
   );
 }
 
+function IconChat() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 4V5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M8 9h8M8 12.5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IconMenuFab() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -91,6 +100,7 @@ export default function MobileBottomNav() {
     if (path.startsWith("/branches")) return "branches";
     if (path.startsWith("/schedule")) return "schedule";
     if (path.startsWith("/profile")) return "profile";
+    if (path.startsWith("/wellness-chat")) return "chat";
     return "home";
   }, [location.pathname]);
 
@@ -112,6 +122,7 @@ export default function MobileBottomNav() {
           { key: "home", label: "Home", icon: <IconHome />, to: "/" },
           { key: "schedule", label: "Schedule", icon: <IconSchedule />, to: "/schedule" },
           { key: "profile", label: "Profile", icon: <IconProfile />, to: "/profile" },
+          { key: "chat", label: "Chat", icon: <IconChat />, to: "/wellness-chat" },
         ];
 
   const middleIndex = Math.ceil(items.length / 2);

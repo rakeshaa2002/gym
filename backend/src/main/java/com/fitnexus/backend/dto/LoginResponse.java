@@ -3,7 +3,6 @@ package com.fitnexus.backend.dto;
 import com.fitnexus.backend.entity.Role;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 
 @Data
 @AllArgsConstructor

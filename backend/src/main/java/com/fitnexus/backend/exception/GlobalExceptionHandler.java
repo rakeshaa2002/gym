@@ -3,6 +3,7 @@ package com.fitnexus.backend.exception;
 import com.fitnexus.backend.dto.ApiErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -174,9 +175,9 @@ public class GlobalExceptionHandler {
 
         log.warn("Upload too large: {}", ex.getMessage());
 
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+        return ResponseEntity.status(HttpStatusCode.valueOf(413))
                 .body(new ApiErrorResponse(
-                        HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                        413,
                         "The uploaded file is too large. Please choose a file smaller than 10 MB.",
                         LocalDateTime.now().toString(),
                         request.getDescription(false).replace("uri=", "")
@@ -215,7 +216,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ApiErrorResponse(
                         HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                        "An unexpected error occurred. Please try again later.",
+                        "An unexpected error occurred: " + ex.getMessage() + " | " + ex.getClass().getName() + " | Cause: " + (ex.getCause() != null ? ex.getCause().getMessage() : "none"),
                         LocalDateTime.now().toString(),
                         request.getDescription(false).replace("uri=", "")
                 ));

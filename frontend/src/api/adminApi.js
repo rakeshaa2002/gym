@@ -26,3 +26,8 @@ export async function deleteAdmin(adminId, deleterId) {
   const res = await api.delete(`/users/admin/${adminId}`, { params: { deleterId } });
   return unwrap(res) ?? true;
 }
+
+export async function getAdminOverview() {
+  const res = await api.get("/admin/stats/overview");
+  return unwrap(res) ?? null;
+}

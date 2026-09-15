@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8081/api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8082/api";
 const UPLOADS_BASE = API_BASE.replace(/\/api\/?$/, "");
 
 export function resolveUploadUrl(path) {

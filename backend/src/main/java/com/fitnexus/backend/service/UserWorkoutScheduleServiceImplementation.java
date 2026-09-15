@@ -5,7 +5,6 @@ import com.fitnexus.backend.dto.schedule.ScheduleWorkoutPlanSummary;
 import com.fitnexus.backend.dto.schedule.ScheduleWorkoutTypeSummary;
 import com.fitnexus.backend.dto.schedule.UserWorkoutScheduleRequest;
 import com.fitnexus.backend.dto.schedule.UserWorkoutScheduleResponse;
-import com.fitnexus.backend.entity.FitnessUser;
 import com.fitnexus.backend.entity.Role;
 import com.fitnexus.backend.entity.UserWorkoutSchedule;
 import com.fitnexus.backend.entity.Users;
@@ -37,6 +36,10 @@ public class UserWorkoutScheduleServiceImplementation {
     private final FitnessUserRepository fitnessUserRepository;
     private final WorkoutPlanRepository workoutPlanRepository;
     private final WorkoutTypeRepository workoutTypeRepository;
+    private final NotificationService notificationService;
+
+    private static final java.time.format.DateTimeFormatter SCHEDULE_WHEN =
+            java.time.format.DateTimeFormatter.ofPattern("MMM d, HH:mm");
 
     private Users getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -46,10 +49,6 @@ public class UserWorkoutScheduleServiceImplementation {
 
         return userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new SecurityException("Authenticated user not found"));
-    }
-
-    private boolean isManagerOrAbove(Role role) {
-        return role == Role.SUPER_ADMIN || role == Role.ADMIN || role == Role.MANAGER;
     }
 
     private boolean isManageRole(Role role) {
@@ -328,7 +327,15 @@ public class UserWorkoutScheduleServiceImplementation {
         UserWorkoutSchedule entity = new UserWorkoutSchedule();
         entity.setCreatedAt(LocalDateTime.now());
         copyFields(request, entity, requester);
-        return toResponse(userWorkoutScheduleRepository.save(entity));
+        UserWorkoutSchedule saved = userWorkoutScheduleRepository.save(entity);
+        // Notify the member that a session was scheduled for them.
+        if (saved.getUser() != null) {
+            String when = saved.getStartDateTime() != null ? saved.getStartDateTime().format(SCHEDULE_WHEN) : "";
+            notificationService.createForUser(saved.getUser(), "SCHEDULE", "New session scheduled",
+                    (saved.getTitle() != null ? saved.getTitle() : "Workout session")
+                            + (when.isBlank() ? "" : " · " + when), "/my-schedule");
+        }
+        return toResponse(saved);
     }
 
     public UserWorkoutScheduleResponse update(Long id, UserWorkoutScheduleRequest request) {
@@ -339,7 +346,15 @@ public class UserWorkoutScheduleServiceImplementation {
         UserWorkoutSchedule entity = userWorkoutScheduleRepository.findById(id)
                 .orElseThrow(() -> new InvalidOperationException("Workout schedule not found"));
         copyFields(request, entity, requester);
-        return toResponse(userWorkoutScheduleRepository.save(entity));
+        UserWorkoutSchedule saved = userWorkoutScheduleRepository.save(entity);
+        // Notify the member that their session was changed.
+        if (saved.getUser() != null) {
+            String when = saved.getStartDateTime() != null ? saved.getStartDateTime().format(SCHEDULE_WHEN) : "";
+            notificationService.createForUser(saved.getUser(), "SCHEDULE", "Session updated",
+                    (saved.getTitle() != null ? saved.getTitle() : "Workout session")
+                            + (when.isBlank() ? "" : " · " + when), "/my-schedule");
+        }
+        return toResponse(saved);
     }
 
     public void delete(Long id) {
@@ -352,6 +367,15 @@ public class UserWorkoutScheduleServiceImplementation {
         if (requester.getRole() != Role.SUPER_ADMIN && !isVisibleToRequester(requester, entity)) {
             throw new SecurityException("You do not have permission to delete this workout schedule");
         }
+        // Capture details before deletion so we can tell the member their session was cancelled.
+        Users member = entity.getUser();
+        String title = entity.getTitle();
+        String when = entity.getStartDateTime() != null ? entity.getStartDateTime().format(SCHEDULE_WHEN) : "";
         userWorkoutScheduleRepository.delete(entity);
+        if (member != null) {
+            notificationService.createForUser(member, "SCHEDULE", "Session cancelled",
+                    (title != null ? title : "Workout session")
+                            + (when.isBlank() ? "" : " · " + when), "/my-schedule");
+        }
     }
 }

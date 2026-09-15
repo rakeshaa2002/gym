@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Card, Col, Row } from "react-bootstrap";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -13,15 +13,17 @@ import { extractApiErrorMessage } from "../../utils/errorMessage";
 import { getWorkoutEventColor, normalizeUserWorkoutSchedule } from "./scheduleUtils";
 
 export default function MySchedule() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Personal schedule belongs to members only; send staff/admins home.
+  const isMember = String(user?.role || "").toUpperCase() === "USER";
   const canView = hasPermission("my-schedule", "view");
 
   useEffect(() => {
-    if (!canView) return;
+    if (!canView || !isMember) return;
     const load = async () => {
       setLoading(true);
       setError("");
@@ -36,7 +38,7 @@ export default function MySchedule() {
       }
     };
     load();
-  }, [canView]);
+  }, [canView, isMember]);
 
   const calendarEvents = useMemo(() => rows.map((item) => ({
     id: String(item.id),
@@ -54,6 +56,10 @@ export default function MySchedule() {
       .sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime())
       .find((item) => new Date(item.startDateTime).getTime() >= now) || rows[0] || null;
   }, [rows]);
+
+  if (!isMember) {
+    return <Navigate to="/" replace />;
+  }
 
   if (!canView) {
     return <div className="content"><div className="alert alert-danger">You do not have permission to view this page.</div></div>;

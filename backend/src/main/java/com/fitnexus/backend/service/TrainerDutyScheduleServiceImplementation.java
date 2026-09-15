@@ -28,17 +28,6 @@ public class TrainerDutyScheduleServiceImplementation {
     private final TrainerDutyScheduleRepository trainerDutyScheduleRepository;
     private final UserRepository userRepository;
 
-    private int roleLevel(Role role) {
-        return switch (role) {
-            case SUPER_ADMIN -> 5;
-            case ADMIN -> 4;
-            case MANAGER -> 3;
-            case TRAINER -> 2;
-            case USER -> 1;
-            default -> 0;
-        };
-    }
-
     private Users getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

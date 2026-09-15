@@ -23,7 +23,7 @@ import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/body-parts")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 @RequiredArgsConstructor
 @Slf4j
 public class BodyPartController {

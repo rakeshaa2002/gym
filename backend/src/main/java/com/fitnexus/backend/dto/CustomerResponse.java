@@ -34,4 +34,18 @@ public class CustomerResponse {
     private String assignedTrainerName;
     private Long trainerId;
     private Long createdById;
+    private String photoPath;
+    private String idProofPath;
+    private Long assignedDietPlanId;
+    private String assignedDietPlanName;
+    private Long assignedWorkoutPlanId;
+    private String assignedWorkoutPlanName;
+    private Double bodyFat;
+    private Boolean isFrozen;
+    private String referredBy;
+    private java.time.LocalDate membershipExpiry;
+    private String membershipPlan;
+    private Long membershipPlanId;
+    private String accessStartTime;
+    private String accessEndTime;
 }

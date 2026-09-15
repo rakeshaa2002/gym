@@ -5,5 +5,7 @@ public enum Role {
     ADMIN,
     TRAINER,
     MANAGER,
-    USER
+    USER,
+    CORPORATE_HR,
+    COUNSELOR
 }

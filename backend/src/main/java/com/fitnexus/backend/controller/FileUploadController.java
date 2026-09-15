@@ -29,8 +29,12 @@ public class FileUploadController {
     private static final long MAX_FILE_SIZE = 10L * 1024L * 1024L;
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "jpg", "jpeg", "png", "webp");
     private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
+    // Wellness-chat attachments: images plus common document types.
+    private static final Set<String> ALLOWED_CHAT_EXTENSIONS =
+            Set.of("jpg", "jpeg", "png", "webp", "gif", "pdf", "doc", "docx", "txt");
     private static final Path UPLOAD_ROOT = Paths.get(System.getProperty("user.dir"), "uploads", "employee-documents");
     private static final Path DIET_IMAGE_UPLOAD_ROOT = Paths.get(System.getProperty("user.dir"), "uploads", "diet-images");
+    private static final Path CHAT_UPLOAD_ROOT = Paths.get(System.getProperty("user.dir"), "uploads", "chat-attachments");
 
     @PostMapping("/employee-documents")
     public ResponseEntity<?> uploadEmployeeDocument(@RequestParam("file") MultipartFile file) {
@@ -120,6 +124,53 @@ public class FileUploadController {
                     "Could not store uploaded image",
                     LocalDateTime.now().toString(),
                     "/api/uploads/diet-images"
+            ));
+        }
+    }
+
+    @PostMapping("/chat-attachments")
+    public ResponseEntity<?> uploadChatAttachment(@RequestParam("file") MultipartFile file) {
+        try {
+            if (file == null || file.isEmpty()) {
+                return badRequest("Please choose a file to send", "/api/uploads/chat-attachments");
+            }
+            if (file.getSize() > MAX_FILE_SIZE) {
+                return badRequest("Attachments must be 10 MB or less", "/api/uploads/chat-attachments");
+            }
+
+            String originalName = file.getOriginalFilename() == null ? "attachment" : file.getOriginalFilename();
+            String extension = getExtension(originalName);
+            if (!ALLOWED_CHAT_EXTENSIONS.contains(extension)) {
+                return badRequest("Allowed: images (JPG, PNG, WEBP, GIF) and documents (PDF, DOC, DOCX, TXT)",
+                        "/api/uploads/chat-attachments");
+            }
+
+            Files.createDirectories(CHAT_UPLOAD_ROOT);
+            String fileName = UUID.randomUUID() + "." + extension;
+            Path target = CHAT_UPLOAD_ROOT.resolve(fileName).normalize();
+            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+
+            FileUploadResponse response = new FileUploadResponse(
+                    fileName,
+                    originalName,
+                    "/uploads/chat-attachments/" + fileName,
+                    file.getContentType(),
+                    file.getSize()
+            );
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(new ApiSuccessResponse<>(
+                    HttpStatus.CREATED.value(),
+                    "Attachment uploaded successfully",
+                    response,
+                    LocalDateTime.now().toString()
+            ));
+        } catch (IOException e) {
+            log.error("Failed to upload chat attachment", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiErrorResponse(
+                    HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                    "Could not store uploaded attachment",
+                    LocalDateTime.now().toString(),
+                    "/api/uploads/chat-attachments"
             ));
         }
     }

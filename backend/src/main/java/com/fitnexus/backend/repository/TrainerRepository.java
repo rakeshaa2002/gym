@@ -18,4 +18,7 @@ public interface TrainerRepository extends JpaRepository<Trainer, Long> {
 
     @EntityGraph(attributePaths = {"account", "account.createdBy"})
     Optional<Trainer> findByAccount_Id(Long accountId);
+
+    @EntityGraph(attributePaths = {"account", "account.createdBy"})
+    List<Trainer> findByAccount_Admin_Id(Long adminId);
 }

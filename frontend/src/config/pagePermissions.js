@@ -1,8 +1,14 @@
-const ROLE_ORDER = ["SUPER_ADMIN", "ADMIN", "MANAGER", "TRAINER", "USER"];
+const ROLE_ORDER = ["SUPER_ADMIN", "ADMIN", "MANAGER", "TRAINER", "COUNSELOR", "USER"];
 
 const APP_PAGES = [
   { key: "dashboard", label: "Overview", path: "/", category: "Core", sortOrder: 1 },
   { key: "role-permissions", label: "Role Permissions", path: "/role-permissions", category: "Management", sortOrder: 5 },
+  { key: "attendance", label: "Attendance", path: "/attendance", category: "Management", sortOrder: 6 },
+  { key: "membership-plans", label: "Membership Plans", path: "/membership-plans", category: "Management", sortOrder: 7 },
+  { key: "leads", label: "Leads CRM", path: "/leads", category: "Management", sortOrder: 8 },
+  { key: "billing", label: "Billing", path: "/billing", category: "Management", sortOrder: 32 },
+  { key: "inventory", label: "Inventory", path: "/inventory", category: "Management", sortOrder: 33 },
+  { key: "reports", label: "Reports", path: "/reports", category: "Management", sortOrder: 34 },
   { key: "employees", label: "Employees", path: "/employees", category: "Management", sortOrder: 10 },
   { key: "users", label: "Users", path: "/users", category: "Management", sortOrder: 11 },
   { key: "headoffice", label: "Head Office", path: "/headoffice", category: "Management", sortOrder: 12 },
@@ -28,8 +34,14 @@ const APP_PAGES = [
   { key: "goals", label: "Goals", path: "/goals", category: "Fitness", sortOrder: 40 },
   { key: "schedule", label: "My Schedule", path: "/schedule", category: "Fitness", sortOrder: 41 },
   { key: "progress", label: "Progress", path: "/progress", category: "Fitness", sortOrder: 42 },
+  { key: "wellness-chat", label: "Wellness Chat", path: "/wellness-chat", category: "Fitness", sortOrder: 43 },
   { key: "profile", label: "Profile", path: "/profile", category: "Account", sortOrder: 50 },
   { key: "onboding-step", label: "Step", path: "/onboding-step", category: "Account", sortOrder: 51 },
+  // ── Corporate Wellness ──
+  { key: "corporate-dashboard", label: "Corporate Wellness", path: "/corporate", category: "Corporate", sortOrder: 60 },
+  { key: "corporate-bmi", label: "BMI Tracking", path: "/corporate/bmi", category: "Corporate", sortOrder: 61 },
+  { key: "corporate-challenges", label: "Wellness Challenges", path: "/corporate/challenges", category: "Corporate", sortOrder: 62 },
+  { key: "corporate-reports", label: "Wellness Reports", path: "/corporate/reports", category: "Corporate", sortOrder: 63 },
 ];
 
 const ROLE_LABELS = {
@@ -37,15 +49,20 @@ const ROLE_LABELS = {
   ADMIN: "Admin",
   MANAGER: "Manager",
   TRAINER: "Trainer",
+  COUNSELOR: "Counselor",
   USER: "User",
 };
 
 const ROLE_DEFAULT_PAGES = {
-  SUPER_ADMIN: APP_PAGES.map((page) => page.key),
-  ADMIN: ["dashboard", "employees", "users", "headoffice", "branches", "departments", "designations", "teams", "workout-type", "body-part", "exercise-master", "workout-plan", "workout-detail", "trainer-duty-schedule", "user-workout-schedule", "schedule", "profile"],
-  MANAGER: ["dashboard", "employees", "users", "branches", "departments", "designations", "teams", "workout-type", "body-part", "exercise-master", "workout-plan", "workout-detail", "trainer-duty-schedule", "user-workout-schedule", "schedule", "profile"],
-  TRAINER: ["dashboard", "users", "workout-filter", "workout-topfilter", "upperbody-workout", "create-workout", "workout-summary", "workout-type", "body-part", "exercise-master", "workout-plan", "workout-detail", "trainer-duty-schedule", "user-workout-schedule", "dietplan", "diet-detail", "goals", "schedule", "progress", "profile"],
-  USER: ["dashboard", "workout-detail", "dietplan", "diet-detail", "goals", "schedule", "my-schedule", "progress", "profile", "onboding-step"],
+  SUPER_ADMIN: [
+    ...APP_PAGES.map((page) => page.key),
+    "corporate-dashboard", "corporate-bmi", "corporate-challenges", "corporate-reports",
+  ],
+  ADMIN: ["dashboard", "employees", "users", "headoffice", "branches", "departments", "designations", "teams", "workout-type", "body-part", "exercise-master", "workout-plan", "workout-detail", "trainer-duty-schedule", "user-workout-schedule", "schedule", "attendance", "membership-plans", "wellness-chat", "profile", "leads", "billing", "inventory", "reports", "corporate-dashboard", "corporate-bmi", "corporate-challenges", "corporate-reports"],
+  MANAGER: ["dashboard", "employees", "users", "branches", "departments", "designations", "teams", "workout-type", "body-part", "exercise-master", "workout-plan", "workout-detail", "trainer-duty-schedule", "user-workout-schedule", "schedule", "attendance", "membership-plans", "wellness-chat", "profile", "leads", "billing", "inventory", "reports", "corporate-dashboard", "corporate-bmi", "corporate-challenges", "corporate-reports"],
+  TRAINER: ["dashboard", "users", "workout-filter", "workout-topfilter", "upperbody-workout", "create-workout", "workout-summary", "workout-type", "body-part", "exercise-master", "workout-plan", "workout-detail", "trainer-duty-schedule", "user-workout-schedule", "dietplan", "diet-detail", "goals", "schedule", "progress", "wellness-chat", "attendance", "profile", "leads", "reports"],
+  COUNSELOR: ["leads"],
+  USER: ["dashboard", "workout-detail", "dietplan", "diet-detail", "goals", "schedule", "my-schedule", "progress", "wellness-chat", "attendance", "profile", "onboding-step"],
 };
 
 function normalizeRole(role) {
@@ -68,8 +85,12 @@ function getDefaultRolePermissions(role) {
   }, {});
 }
 
-function buildPermissionMap(permissions = []) {
-  return (Array.isArray(permissions) ? permissions : []).reduce((acc, permission) => {
+function buildPermissionMap(permissions = [], role) {
+  // Start from defaults for the given role so new pages are automatically included
+  const defaults = role ? getDefaultRolePermissions(role) : {};
+
+  // Overlay saved permissions on top of defaults
+  const saved = (Array.isArray(permissions) ? permissions : []).reduce((acc, permission) => {
     if (!permission?.pageKey) return acc;
     acc[permission.pageKey] = {
       pageKey: permission.pageKey,
@@ -80,6 +101,8 @@ function buildPermissionMap(permissions = []) {
     };
     return acc;
   }, {});
+
+  return { ...defaults, ...saved };
 }
 
 function toPermissionList(permissionMap = {}) {

@@ -6,7 +6,7 @@ import api from "../../utils/api";
 import { useAuth } from '../../context/AuthContext'; // Adjust path as needed
 
 import logo from "/src/assets/images/logo/logo.png";
-import loginImage from "/src/assets/images/auth/no-pain-no-gain-2048x2048-17407.png";
+import loginImage from "/src/assets/images/auth/kaarsni-k-gym-logo.png";
 import InputGroupText from 'react-bootstrap/esm/InputGroupText';
 import { IconEye, IconEyeOff } from '@tabler/icons-react';
 
@@ -73,8 +73,13 @@ export default function Signin() {
 
                 // Wait 1 second then redirect (gives time for context to update)
                 setTimeout(() => {
-                    console.log("🚀 Navigating to home page (/)");
-                    navigate("/");
+                    if (response.data.data.role === 'CORPORATE_HR') {
+                        console.log("🚀 Navigating to hr-portal");
+                        navigate("/hr-portal");
+                    } else {
+                        console.log("🚀 Navigating to home page (/)");
+                        navigate("/");
+                    }
                 }, 1000);
             } else {
                 setError("Login successful but no token received. Please contact support.");
@@ -88,7 +93,7 @@ export default function Signin() {
             } else if (error.response?.status === 404) {
                 setError("User not found");
             } else if (error.code === 'ERR_NETWORK') {
-                setError("Cannot connect to server. Make sure backend is running on localhost:8081");
+                setError("Cannot connect to server. Make sure backend is running on localhost:8082");
             } else {
                 setError(error.response?.data?.message || "Login failed. Please try again.");
             }
@@ -108,7 +113,7 @@ export default function Signin() {
                                 <div className="codex-brand mb-lg-5 mb-4">
                                     <Link className="d-flex align-items-center justify-content-center" to="/" onClick={(e) => e.preventDefault()}>
                                         <img className="img-fluid" src={logo} alt="theeme-logo" />
-                                        <span className="fs-3 align-middle ms-2 lh-1">FitNexus</span>
+                                        <span className="fs-3 align-middle ms-2 lh-1">Kaarsini K Gym</span>
                                     </Link>
                                 </div>
                                 <h3>Welcome Back 👋</h3>
@@ -177,6 +182,19 @@ export default function Signin() {
                                 <div className="text-center mt-4">
                                     Don't you have an account?
                                     <Link to="/sign-up" className="text-primary ms-2">Sign Up</Link>
+                                </div>
+                                <div className="text-center mt-3" style={{ fontSize: '13px', color: '#94a3b8' }}>
+                                    Sales Team member?{' '}
+                                    <Link
+                                        to="/sales-login"
+                                        style={{
+                                            color: '#6366f1',
+                                            fontWeight: 600,
+                                            textDecoration: 'none',
+                                        }}
+                                    >
+                                        Sales Portal Login →
+                                    </Link>
                                 </div>
                             </div>
                         </Col>

@@ -26,3 +26,28 @@ export async function deleteTrainer(trainerId, deleterId) {
   await api.delete(`/users/trainer/${trainerId}`, { params: { deleterId } });
   return true;
 }
+
+export async function getCounselors(requesterId) {
+  const res = await api.get("/users/counselors", { params: { requesterId } });
+  return unwrap(res) || [];
+}
+
+export async function createCounselor(payload, creatorId) {
+  const res = await api.post("/users/counselor", payload, { params: { creatorId } });
+  return unwrap(res) || null;
+}
+
+export async function updateCounselor(counselorId, payload, updaterId) {
+  const res = await api.put(`/users/counselor/${counselorId}`, payload, { params: { updaterId } });
+  return unwrap(res) || null;
+}
+
+export async function deleteCounselor(counselorId, deleterId) {
+  await api.delete(`/users/counselor/${counselorId}`, { params: { deleterId } });
+  return true;
+}
+
+export async function getTrainerPerformances(requesterId) {
+  const res = await api.get("/trainers/performance", { params: { requesterId } });
+  return unwrap(res) || [];
+}

@@ -62,7 +62,27 @@ public interface UserManagementService {
 
     List<CustomerResponse> getCustomersAssignedToTrainer(Long trainerId);
 
+    CorporateHrResponse createCorporateHr(CreateCorporateHrRequest request, Long creatorId);
+
+    CorporateHrResponse updateCorporateHr(Long corporateHrId, CreateCorporateHrRequest request, Long updaterId);
+
+    void deleteCorporateHr(Long corporateHrId, Long deleterId);
+
+    List<CorporateHrResponse> getAllCorporateHrs(Long requesterId);
+
+    CounselorResponse createCounselor(CreateCounselorRequest request, Long creatorId);
+
+    CounselorResponse updateCounselor(Long counselorId, CreateCounselorRequest request, Long updaterId);
+
+    CounselorResponse getCounselor(Long counselorId, Long requesterId);
+
+    void deleteCounselor(Long counselorId, Long deleterId);
+
+    List<CounselorResponse> getAllCounselors(Long requesterId);
+
     CustomerResponse activateCustomer(Long customerId, Long trainerId);
+
+    void setUserActiveStatus(Long userId, boolean active, Long updaterId);
 
     DietPlan assignDietPlanToUser(Long userId, Long dietPlanId);
 
@@ -73,5 +93,14 @@ public interface UserManagementService {
     WorkoutPlan getMyWorkoutPlan();
 
     List<ReportingOptionResponse> getReportingOptions(Role targetRole, Long branchId, Long requesterId);
+
+    /** Returns customers whose membership expires within the next {@code days} days (today + days). */
+    List<CustomerResponse> getExpiringMembers(int days, Long requesterId);
+
+    /** Returns members at risk of churn with associated reasons */
+    List<AtRiskMemberResponse> getAtRiskMembers(Long requesterId);
+    void engageAtRiskMember(Long customerId, Long requesterId, String message);
 }
+
+
 

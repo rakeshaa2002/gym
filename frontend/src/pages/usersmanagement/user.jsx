@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Modal, Button } from "react-bootstrap";
-import { IconHome, IconEdit, IconTrash, IconPlus, IconChefHat, IconBarbell } from "@tabler/icons-react";
+import { IconHome, IconEdit, IconTrash, IconPlus, IconChefHat, IconBarbell, IconEye, IconEyeOff, IconCamera, IconUpload, IconUserCircle } from "@tabler/icons-react";
 import api from "../../utils/api";
 import {
   getAllHeadOffices,
@@ -23,19 +23,23 @@ import { useAuth } from "../../context/AuthContext";
 import WizardPopup from "../../components/WizardPopup";
 import PhoneField from "../../components/PhoneField";
 import { getWorkoutPlans, assignWorkoutPlan } from "../../api/workoutApi";
+import { getMemberProgressEntries } from "../../api/progressApi";
 import { normalizeWorkoutPlan } from "../workout/workoutUtils";
+import { getMembershipPlans } from "../../api/membershipPlansApi";
+import { assignMembership } from "../../api/membershipApi";
 import adminAvatar from "/src/assets/images/avtar/profile.png";
 import superAdminAvatar from "/src/assets/images/avtar/profile-img.png";
 import userAvatar from "/src/assets/images/avtar/samantha-lee.png";
 import managerAvatar from "/src/assets/images/trainer/trainer1-avtar.png";
 import trainerAvatar from "/src/assets/images/trainer/trainer2-avtar.png";
+import { formatMemberCode } from "../../utils/memberCode";
 
 const ROLE_OPTIONS = [
   { value: "SUPER_ADMIN", label: "Super Admin" },
   { value: "ADMIN", label: "Admin" },
   { value: "MANAGER", label: "Manager" },
   { value: "TRAINER", label: "Trainer" },
-  { value: "USER", label: "User" },
+  { value: "USER", label: "Member" },
 ];
 
 const USER_MODAL_STEPS = [
@@ -87,12 +91,24 @@ function getOrganizationVisibility(role) {
     };
   }
 
+  if (normalizedRole === "USER") {
+    // Members skip the Department step — they're assigned straight to a Team
+    // (whose department/branch is derived automatically) plus its trainer.
+    return {
+      headOffice: true,
+      branch: true,
+      department: false,
+      team: true,
+      designation: false,
+    };
+  }
+
   return {
     headOffice: true,
     branch: true,
     department: true,
     team: true,
-    designation: true,
+    designation: false,
   };
 }
 
@@ -424,6 +440,11 @@ function createEmptyForm(role = "ADMIN") {
     esiNumber: "",
     declarationDate: "",
     declarationPlace: "",
+    membershipPlanId: "",
+    membershipAccessStartTime: "06:00",
+    membershipAccessEndTime: "22:00",
+    membershipMonths: "",
+    workoutPlanId: "",
     img: ROLE_AVATARS[normalizeRole(role)] || userAvatar,
   };
 }
@@ -444,15 +465,19 @@ function splitName(fullName = "") {
   };
 }
 
-function buildOrgLabel(item, orgLists) {
+function buildOrgLabel(item, orgLists, role) {
   if (!item) return "-";
   const parts = [];
 
+  // Members aren't assigned a department (it's derived from their team), so keep
+  // it out of their org-scope label.
+  const isMember = normalizeRole(role) === "USER";
+
   const headOfficeId = item.headOfficeId ?? item.headOffice?.id;
   const branchId = item.branchId ?? item.branch?.id;
-  const departmentId = item.departmentId ?? item.department?.id;
+  const departmentId = isMember ? null : (item.departmentId ?? item.department?.id);
   const teamId = item.teamId ?? item.team?.id;
-  const designationId = item.designationId ?? item.designation?.id;
+  const designationId = isMember ? null : (item.designationId ?? item.designation?.id);
 
   if (headOfficeId) {
     const headOffice = orgLists.headOffices.find((entry) => String(entry.id) === String(headOfficeId));
@@ -479,7 +504,8 @@ function buildOrgLabel(item, orgLists) {
     if (designation?.name) parts.push(designation.name);
   }
 
-  return parts.length ? parts.join(" > ") : item.department || item.branch || item.designation || "-";
+  if (parts.length) return parts.join(" > ");
+  return (isMember ? item.branch : (item.department || item.branch || item.designation)) || "-";
 }
 
 function mapAdminRow(item) {
@@ -558,6 +584,11 @@ function mapCustomerRow(item) {
     countryCode,
     employeeCode: "",
     department: item?.assignedTrainerName || "",
+    assignedTrainerName: item?.assignedTrainerName || "",
+    assignedDietPlanId: item?.assignedDietPlanId ?? "",
+    assignedDietPlanName: item?.assignedDietPlanName || "",
+    assignedWorkoutPlanId: item?.assignedWorkoutPlanId ?? "",
+    assignedWorkoutPlanName: item?.assignedWorkoutPlanName || "",
     qualification: "",
     status: item?.isActive ? "ACTIVE" : "INACTIVE",
     createdByName: item?.assignedTrainerName || "",
@@ -583,6 +614,12 @@ function getCountryOptions(search) {
 
 function getRoleBadgeClass(role) {
   return ROLE_COLORS[normalizeRole(role)] || "bg-secondary";
+}
+
+// The USER role represents gym members/customers — show "MEMBER" in the UI while
+// keeping the underlying role value ("USER") unchanged everywhere else.
+function roleDisplay(role) {
+  return normalizeRole(role) === "USER" ? "MEMBER" : String(role || "").toUpperCase();
 }
 
 function toSafeId(value) {
@@ -615,14 +652,144 @@ function StatCard({ value, label }) {
   );
 }
 
+// Member photo field: lets staff either upload an image file or capture one live
+// from the device camera (getUserMedia). On capture the frame is encoded to a JPEG
+// File and handed to onFile, which uploads it the same way as a file selection.
+function PhotoCaptureField({ label, required, value, href, uploading, onFile }) {
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraOn(false);
+  };
+
+  useEffect(() => () => stopCamera(), []);
+
+  const startCamera = async () => {
+    setCameraError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Camera is not available in this browser. Please upload a photo instead.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      streamRef.current = stream;
+      setCameraOn(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 0);
+    } catch {
+      setCameraError("Unable to access the camera. Check permissions or use Upload instead.");
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 480;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          onFile(new File([blob], `member-photo-${Date.now()}.jpg`, { type: "image/jpeg" }));
+        }
+        stopCamera();
+      },
+      "image/jpeg",
+      0.9,
+    );
+  };
+
+  return (
+    <div className="col-12">
+      <label className="form-label">{label}{required ? " *" : ""}</label>
+      <div className="d-flex align-items-start gap-3 flex-wrap">
+        <div
+          className="border rounded-3 d-flex align-items-center justify-content-center bg-light overflow-hidden"
+          style={{ width: 96, height: 96, flex: "0 0 auto" }}
+        >
+          {value ? (
+            <img src={href} alt="Member" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <IconUserCircle size={44} className="text-muted" />
+          )}
+        </div>
+        <div className="flex-grow-1" style={{ minWidth: 220 }}>
+          {cameraOn ? (
+            <div>
+              <video ref={videoRef} playsInline muted style={{ width: "100%", maxWidth: 280, borderRadius: 8, background: "#000" }} />
+              <div className="d-flex gap-2 mt-2">
+                <button type="button" className="btn btn-primary btn-sm" onClick={capturePhoto}>
+                  <IconCamera size={16} className="me-1" /> Capture
+                </button>
+                <button type="button" className="btn btn-light btn-sm" onClick={stopCamera}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div className="d-flex flex-wrap gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="d-none"
+                disabled={uploading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onFile(file);
+                  e.target.value = "";
+                }}
+              />
+              <button type="button" className="btn btn-outline-primary btn-sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+                <IconUpload size={16} className="me-1" /> Upload Photo
+              </button>
+              <button type="button" className="btn btn-outline-secondary btn-sm" disabled={uploading} onClick={startCamera}>
+                <IconCamera size={16} className="me-1" /> Take Photo
+              </button>
+            </div>
+          )}
+          <small className="text-muted d-block mt-1">
+            {uploading ? "Uploading…" : value ? <a href={href} target="_blank" rel="noreferrer">View photo</a> : "Upload an image or capture one from your camera."}
+          </small>
+          {cameraError && <small className="text-danger d-block">{cameraError}</small>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function User() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+
+  const searchParams = new URLSearchParams(location.search);
+  const filterQuery = searchParams.get("filter") || "all";
+  const [memberFilterTab, setMemberFilterTab] = useState(filterQuery);
+
+  useEffect(() => {
+    setMemberFilterTab(filterQuery);
+  }, [filterQuery]);
 
   const currentRole = normalizeRole(currentUser?.role);
   const currentUserId = getCurrentUserId(currentUser);
   const gridView = location.pathname.endsWith("/users-grid");
   const routeViewMode = location.pathname.endsWith("/employees") ? "employees" : "users";
+  // The /users route is the members-management page: it only deals with members,
+  // so the Employees/Users view switch and the "Add Employee" affordance are hidden
+  // there. The /employees page (under Organization Management) keeps both.
+  const isMembersPage = routeViewMode === "users";
 
   const [rows, setRows] = useState([]);
   const [viewMode, setViewMode] = useState(routeViewMode);
@@ -630,6 +797,7 @@ export default function User() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState(null);
   const [uploadingField, setUploadingField] = useState("");
   const [dietPlans, setDietPlans] = useState([]);
   const [dietPlansLoading, setDietPlansLoading] = useState(false);
@@ -649,9 +817,20 @@ export default function User() {
   const [showModal, setShowModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [selectedRow, setSelectedRow] = useState(null);
+
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileMember, setProfileMember] = useState(null);
+  const [profileTab, setProfileTab] = useState("personal");
+  const [allTransactions, setAllTransactions] = useState([]);
+  const [allAttendance, setAllAttendance] = useState([]);
+  const [memberProgress, setMemberProgress] = useState([]);
+  const [memberProgressLoading, setMemberProgressLoading] = useState(false);
+  const [allMembershipPlans, setAllMembershipPlans] = useState([]);
+  const [allWorkoutPlans, setAllWorkoutPlans] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [modalError, setModalError] = useState("");
   const [modalTab, setModalTab] = useState("identity");
+  const [showPassword, setShowPassword] = useState(false);
 
   const [form, setForm] = useState(createEmptyForm(getDefaultCreateRole(currentRole)));
 
@@ -741,9 +920,20 @@ export default function User() {
 
   const filteredTeams = useMemo(() => {
     const active = getActiveByIds(teams);
+    if (isCustomerForm) {
+      // Members have no Department step, so scope teams to the chosen Branch via
+      // each team's parent department.
+      if (!form.branchId) return active.filter(Boolean);
+      const branchDeptIds = new Set(
+        getActiveByIds(departments)
+          .filter((item) => String(item.branchId) === String(form.branchId))
+          .map((item) => String(item.id)),
+      );
+      return active.filter((item) => branchDeptIds.has(String(item.departmentId)));
+    }
     if (!form.departmentId) return active.filter(Boolean);
     return active.filter((item) => String(item.departmentId) === String(form.departmentId));
-  }, [teams, form.departmentId]);
+  }, [teams, departments, form.departmentId, form.branchId, isCustomerForm]);
 
   const filteredDesignations = useMemo(() => {
     const active = getActiveByIds(designations);
@@ -755,17 +945,54 @@ export default function User() {
     const parts = [
       selectedHeadOffice?.name,
       selectedBranch?.name,
-      selectedDepartment?.name,
+      // Members don't pick a department (it's derived from the team), so keep it
+      // out of their selection preview.
+      isCustomerForm ? null : selectedDepartment?.name,
       selectedDesignation?.name,
       selectedTeam?.name,
     ].filter(Boolean);
 
     return parts.length ? parts.join(" > ") : "Not assigned yet";
-  }, [selectedHeadOffice, selectedBranch, selectedDepartment, selectedTeam, selectedDesignation]);
+  }, [selectedHeadOffice, selectedBranch, selectedDepartment, selectedTeam, selectedDesignation, isCustomerForm]);
 
   const employeeRows = useMemo(() => rows.filter((item) => normalizeRole(item.role) !== "USER"), [rows]);
   const userRows = useMemo(() => rows.filter((item) => normalizeRole(item.role) === "USER"), [rows]);
-  const displayedRows = useMemo(() => (viewMode === "users" ? userRows : employeeRows), [employeeRows, userRows, viewMode]);
+
+  const filteredUserRows = useMemo(() => {
+    if (viewMode !== "users") return [];
+    return userRows.filter((item) => {
+      if (memberFilterTab === "active") {
+        const isStatusActive = String(item.status).toUpperCase() === "ACTIVE";
+        const isNotFrozen = !item.raw?.isFrozen;
+        const hasNotExpired = !item.raw?.membershipExpiry || new Date(item.raw.membershipExpiry) >= new Date(new Date().setHours(0,0,0,0));
+        return isStatusActive && isNotFrozen && hasNotExpired;
+      }
+      if (memberFilterTab === "expired") {
+        const isStatusInactive = String(item.status).toUpperCase() === "INACTIVE";
+        const hasExpired = item.raw?.membershipExpiry && new Date(item.raw.membershipExpiry) < new Date(new Date().setHours(0,0,0,0));
+        return isStatusInactive || hasExpired;
+      }
+      if (memberFilterTab === "freeze") {
+        return Boolean(item.raw?.isFrozen);
+      }
+      if (memberFilterTab === "renewal") {
+        if (!item.raw?.membershipExpiry) return false;
+        const expiryDate = new Date(item.raw.membershipExpiry);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        expiryDate.setHours(0, 0, 0, 0);
+        const diffTime = expiryDate.getTime() - today.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays >= -15 && diffDays <= 15;
+      }
+      if (memberFilterTab === "referrals") {
+        return typeof item.raw?.referredBy === "string" && item.raw.referredBy.trim() !== "";
+      }
+      return true;
+    });
+  }, [userRows, memberFilterTab, viewMode]);
+
+  const displayedRows = useMemo(() => (viewMode === "users" ? filteredUserRows : employeeRows), [employeeRows, filteredUserRows, viewMode]);
 
   const activeRows = useMemo(
     () => displayedRows.filter((item) => String(item.status).toUpperCase() === "ACTIVE"),
@@ -878,7 +1105,7 @@ export default function User() {
       setRows(nextRows);
     } catch (e) {
       setRows([]);
-      setError(extractApiErrorMessage(e, "Failed to load users"));
+      setError(extractApiErrorMessage(e, "Failed to load records"));
     } finally {
       setLoading(false);
     }
@@ -886,11 +1113,45 @@ export default function User() {
 
   useEffect(() => {
     loadOrgData();
+    const fetchPlans = async () => {
+      try {
+        const [mPlans, wPlans] = await Promise.all([
+          getMembershipPlans({ activeOnly: true }),
+          getWorkoutPlans()
+        ]);
+        setAllMembershipPlans(mPlans);
+        setAllWorkoutPlans(wPlans);
+      } catch (err) {
+        console.error("Failed to load plans", err);
+      }
+    };
+    fetchPlans();
   }, []);
 
   useEffect(() => {
     loadRows();
   }, [currentUserId, currentRole]);
+
+  useEffect(() => {
+    if (!currentUserId || viewMode !== "users") return;
+    const fetchLogs = async () => {
+      try {
+        const [transactionsRes, attendanceRes] = await Promise.allSettled([
+          api.get("/billing/transactions"),
+          api.get("/attendance")
+        ]);
+        if (transactionsRes.status === "fulfilled") {
+          setAllTransactions(transactionsRes.value?.data?.data || []);
+        }
+        if (attendanceRes.status === "fulfilled") {
+          setAllAttendance(attendanceRes.value?.data?.data || []);
+        }
+      } catch (e) {
+        console.error("Failed to load logs for profile modal", e);
+      }
+    };
+    fetchLogs();
+  }, [currentUserId, viewMode]);
 
   useEffect(() => {
     if (!showDietAssignModal) return;
@@ -1036,7 +1297,7 @@ export default function User() {
 
   const openAdd = () => {
     if (!canCreateInCurrentView) {
-      setError(`Your current role cannot create ${viewMode === "users" ? "users" : "employees"} from this page.`);
+      setError(`Your current role cannot create ${viewMode === "users" ? "members" : "employees"} from this page.`);
       return;
     }
 
@@ -1087,6 +1348,14 @@ export default function User() {
       ratePerHour: org?.ratePerHour ?? "",
       weight: org?.weight ?? "",
       height: org?.height ?? "",
+      bodyFat: org?.bodyFat ?? "",
+      isFrozen: org?.isFrozen ?? false,
+      referredBy: org?.referredBy || "",
+      membershipPlanId: org?.membershipPlanId ? String(org.membershipPlanId) : "",
+      membershipAccessStartTime: org?.accessStartTime || "06:00",
+      membershipAccessEndTime: org?.accessEndTime || "22:00",
+      membershipMonths: "",
+      workoutPlanId: org?.assignedWorkoutPlanId ? String(org.assignedWorkoutPlanId) : "",
       bloodGroup: org?.bloodGroup || "",
       age: org?.age ?? "",
       gender: org?.gender || "",
@@ -1131,11 +1400,11 @@ export default function User() {
       bankBranch: org?.bankBranch || "",
       qualificationDocumentPath: org?.qualificationDocumentPath || "",
       certificationDocumentPath: org?.certificationDocumentPath || "",
-      idProofDocumentPath: org?.idProofDocumentPath || "",
+      idProofDocumentPath: org?.idProofDocumentPath || org?.idProofPath || "",
       addressProofDocumentPath: org?.addressProofDocumentPath || "",
       resumeDocumentPath: org?.resumeDocumentPath || "",
       offerLetterDocumentPath: org?.offerLetterDocumentPath || "",
-      candidatePhotoPath: org?.candidatePhotoPath || "",
+      candidatePhotoPath: org?.candidatePhotoPath || org?.photoPath || "",
       aadharCardDocumentPath: org?.aadharCardDocumentPath || "",
       panCardDocumentPath: org?.panCardDocumentPath || "",
       bankDocumentPath: org?.bankDocumentPath || "",
@@ -1171,6 +1440,7 @@ export default function User() {
 
   const closeModal = () => {
     setShowModal(false);
+    setShowPassword(false);
     setModalError("");
     setModalTab("identity");
   };
@@ -1181,7 +1451,9 @@ export default function User() {
     }
 
     setDietAssignTarget(row);
-    setDietAssignPlanId("");
+    // Preselect the member's current diet plan so admins/trainers can see and
+    // change what's already assigned.
+    setDietAssignPlanId(row?.assignedDietPlanId ? String(row.assignedDietPlanId) : "");
     setDietAssignError("");
     setShowDietAssignModal(true);
   };
@@ -1192,7 +1464,8 @@ export default function User() {
     }
 
     setWorkoutAssignTarget(row);
-    setWorkoutAssignPlanId("");
+    // Preselect the member's current workout plan so it's visible and editable.
+    setWorkoutAssignPlanId(row?.assignedWorkoutPlanId ? String(row.assignedWorkoutPlanId) : "");
     setWorkoutAssignError("");
     setShowWorkoutAssignModal(true);
   };
@@ -1221,7 +1494,7 @@ export default function User() {
     } catch (err) {
       const message =
         err?.response?.status === 403
-          ? "You do not have permission to assign a diet plan to this user."
+          ? "You do not have permission to assign a diet plan to this member."
           : extractApiErrorMessage(err, "Failed to assign diet plan");
       setDietAssignError(message);
     } finally {
@@ -1253,7 +1526,7 @@ export default function User() {
     } catch (err) {
       const message =
         err?.response?.status === 403
-          ? "You do not have permission to assign a workout plan to this user."
+          ? "You do not have permission to assign a workout plan to this member."
           : extractApiErrorMessage(err, "Failed to assign workout plan");
       setWorkoutAssignError(message);
     } finally {
@@ -1486,6 +1759,11 @@ export default function User() {
           teamId: shared.teamId,
           designationId: shared.designationId,
           assignedTrainerId: toSafeId(selectedTeamTrainer?.option?.id || selectedTeamTrainer?.identity?.id || form.assignedTrainerId),
+          photoPath: (form.candidatePhotoPath || "").trim() || null,
+          idProofPath: (form.idProofDocumentPath || "").trim() || null,
+          bodyFat: form.bodyFat === "" || form.bodyFat === null ? null : Number(form.bodyFat),
+          isFrozen: Boolean(form.isFrozen),
+          referredBy: (form.referredBy || "").trim() || null,
         },
       };
     }
@@ -1506,6 +1784,7 @@ export default function User() {
         payload: {
           email: shared.email,
           password: form.password.trim() || "Temp@123",
+        keepPassword: !form.password.trim(),
           firstName: shared.firstName,
           lastName: shared.lastName,
         },
@@ -1519,6 +1798,7 @@ export default function User() {
       payload: {
         email: shared.email,
         password: form.password.trim() || "Temp@123",
+        keepPassword: !form.password.trim(),
         firstName: shared.firstName,
         lastName: shared.lastName,
         department: shared.departmentName,
@@ -1543,6 +1823,7 @@ export default function User() {
       payload: {
         email: shared.email,
         password: form.password.trim() || "Temp@123",
+        keepPassword: !form.password.trim(),
         firstName: shared.firstName,
         lastName: shared.lastName,
         department: shared.departmentName,
@@ -1567,6 +1848,7 @@ export default function User() {
         payload: {
           email: shared.email,
           password: form.password.trim() || "Temp@123",
+        keepPassword: !form.password.trim(),
           firstName: shared.firstName,
           lastName: shared.lastName,
           specialization: form.specialization.trim() || shared.departmentName || "General Training",
@@ -1597,6 +1879,7 @@ export default function User() {
           email: shared.email,
           firstName: shared.firstName,
           lastName: shared.lastName,
+          password: form.password.trim() || null,
           weight: Number(form.weight) || 0,
           height: Number(form.height) || 0,
           bloodGroup: form.bloodGroup || "O+",
@@ -1614,6 +1897,11 @@ export default function User() {
           teamId: shared.teamId,
           designationId: shared.designationId,
           assignedTrainerId: toSafeId(selectedTeamTrainer?.option?.id || selectedTeamTrainer?.identity?.id || form.assignedTrainerId),
+          photoPath: (form.candidatePhotoPath || "").trim() || null,
+          idProofPath: (form.idProofDocumentPath || "").trim() || null,
+          bodyFat: form.bodyFat === "" || form.bodyFat === null ? null : Number(form.bodyFat),
+          isFrozen: Boolean(form.isFrozen),
+          referredBy: (form.referredBy || "").trim() || null,
         },
       };
     }
@@ -1677,17 +1965,19 @@ export default function User() {
 
     if (role === "USER") {
       if (!selectedTeamTrainer?.identity?.id && !selectedTeamTrainer?.option?.id && !form.assignedTrainerId) {
-        return "Team trainer is required for User";
+        return "Team trainer is required for Member";
       }
-      if (!String(form.weight).trim()) return "Weight is required for User";
-      if (!String(form.height).trim()) return "Height is required for User";
-      if (!form.bloodGroup.trim()) return "Blood group is required for User";
-      if (!String(form.age).trim()) return "Age is required for User";
-      if (!form.gender.trim()) return "Gender is required for User";
-      if (!form.address.trim()) return "Address is required for User";
-      if (!form.city.trim()) return "City is required for User";
-      if (!form.emergencyContact.trim()) return "Emergency contact is required for User";
-      if (!form.emergencyPhone.trim()) return "Emergency phone is required for User";
+      if (!String(form.weight).trim()) return "Weight is required for Member";
+      if (!String(form.height).trim()) return "Height is required for Member";
+      if (!form.bloodGroup.trim()) return "Blood group is required for Member";
+      if (!String(form.age).trim()) return "Age is required for Member";
+      if (!form.gender.trim()) return "Gender is required for Member";
+      if (!form.address.trim()) return "Address is required for Member";
+      if (!form.city.trim()) return "City is required for Member";
+      if (!form.emergencyContact.trim()) return "Emergency contact is required for Member";
+      if (!form.emergencyPhone.trim()) return "Emergency phone is required for Member";
+      if (!form.candidatePhotoPath) return "Member photo is required (upload or take a photo)";
+      if (!form.idProofDocumentPath) return "ID proof is required for Member";
     }
 
     const orgVisibility = getOrganizationVisibility(role);
@@ -1719,9 +2009,6 @@ export default function User() {
 
     if (orgVisibility.branch && form.branchId && !form.headOfficeId) return "Select a head office before choosing a branch";
     if (orgVisibility.department && form.departmentId && !form.branchId) return "Select a branch before choosing a department";
-    if (isCustomerForm && orgVisibility.team && form.teamId && !form.designationId) {
-      return "Select a designation before choosing a team";
-    }
     if (orgVisibility.designation && form.designationId && !form.departmentId) return "Select a department before choosing a designation";
 
     return null;
@@ -1769,14 +2056,36 @@ export default function User() {
     try {
       const request = isEdit ? buildUpdateRequest() : buildCreateRequest();
 
-      await api.request({
+      const response = await api.request({
         method: isEdit ? "put" : "post",
         url: request.endpoint,
         params: request.params,
         data: request.payload,
       });
 
-      setNotice(isEdit ? "Employee updated successfully" : "Employee added successfully");
+      const member = response?.data?.data;
+      const memberId = isEdit ? selectedRow?.id : member?.id;
+
+      if (memberId && targetRole === "USER") {
+        // 1. Assign Membership Plan if selected
+        if (form.membershipPlanId) {
+          const planPayload = {
+            planId: Number(form.membershipPlanId),
+            accessStartTime: form.membershipAccessStartTime || "06:00",
+            accessEndTime: form.membershipAccessEndTime || "22:00",
+            months: form.membershipMonths ? Number(form.membershipMonths) : null,
+          };
+          await assignMembership(memberId, planPayload);
+        }
+
+        // 2. Assign Workout Plan if selected
+        if (form.workoutPlanId) {
+          await assignWorkoutPlan(memberId, Number(form.workoutPlanId));
+        }
+      }
+
+      const noun = targetRole === "USER" ? "Member" : "Employee";
+      setNotice(isEdit ? `${noun} updated successfully` : `${noun} added successfully`);
       setShowModal(false);
       setSelectedRow(null);
       setForm(createEmptyForm(getDefaultCreateRole(currentRole)));
@@ -1824,6 +2133,27 @@ export default function User() {
       setError(extractApiErrorMessage(e, "Failed to delete employee"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (row) => {
+    if (!row?.id || togglingId) return;
+    const nextActive = row.status !== "ACTIVE";
+    setTogglingId(row.id);
+    setError("");
+    try {
+      await api.put(`/users/${row.id}/status`, null, {
+        params: { active: nextActive, updaterId: currentUserId },
+      });
+      {
+        const noun = normalizeRole(row.role) === "USER" ? "Member" : "Employee";
+        setNotice(nextActive ? `${noun} activated` : `${noun} deactivated`);
+      }
+      await loadRows();
+    } catch (e) {
+      setError(extractApiErrorMessage(e, "Failed to update status"));
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -1883,7 +2213,10 @@ export default function User() {
 
   const roleSelectOptions = useMemo(() => {
     const availability = createAvailability;
-    return ROLE_OPTIONS.filter((item) => (viewMode === "users" ? item.value === "USER" : item.value !== "USER")).map((item) => ({
+    return ROLE_OPTIONS.filter((item) => {
+      if (item.value === "SUPER_ADMIN") return false;
+      return viewMode === "users" ? item.value === "USER" : item.value !== "USER";
+    }).map((item) => ({
       ...item,
       disabled: !availability[item.value],
     }));
@@ -1891,31 +2224,146 @@ export default function User() {
 
   const renderStats = () => (
     <div className="row mb-4">
-      <StatCard value={displayedRows.length} label={viewMode === "users" ? "Total Users" : "Total Employees"} />
+      <StatCard value={displayedRows.length} label={viewMode === "users" ? "Total Members" : "Total Employees"} />
       <StatCard value={activeRows.length} label="Active Records" />
       <StatCard value={inactiveRows.length} label="Inactive Records" />
       <StatCard value={totalRoles} label="Role Types" />
     </div>
   );
 
-  const renderDisplaySwitch = () => (
-    <div className="d-flex flex-wrap gap-2 mb-3">
-      <Button
-        type="button"
-        variant={viewMode === "employees" ? "primary" : "light"}
-        onClick={() => setViewMode("employees")}
-      >
-        Employees ({employeeRows.length})
-      </Button>
-      <Button
-        type="button"
-        variant={viewMode === "users" ? "primary" : "light"}
-        onClick={() => setViewMode("users")}
-      >
-        Users ({userRows.length})
-      </Button>
-    </div>
-  );
+  const renderDisplaySwitch = () => {
+    // Members page manages members only — no employee view to switch to.
+    if (isMembersPage) return null;
+    return (
+      <div className="d-flex flex-wrap gap-2 mb-3">
+        <Button
+          type="button"
+          variant={viewMode === "employees" ? "primary" : "light"}
+          onClick={() => setViewMode("employees")}
+        >
+          Employees ({employeeRows.length})
+        </Button>
+        <Button
+          type="button"
+          variant={viewMode === "users" ? "primary" : "light"}
+          onClick={() => setViewMode("users")}
+        >
+          Members ({userRows.length})
+        </Button>
+      </div>
+    );
+  };
+
+  const handleFilterTabClick = (key) => {
+    navigate(`/users?filter=${key}`);
+  };
+
+  const renderMemberFilterTabs = () => {
+    if (viewMode !== "users") return null;
+
+    const tabs = [
+      { key: "all", label: "All Members" },
+      { key: "active", label: "Active" },
+      { key: "expired", label: "Expired" },
+      { key: "freeze", label: "Freeze" },
+      { key: "renewal", label: "Renewal Due" },
+      { key: "referrals", label: "Referrals" },
+    ];
+
+    return (
+      <div className="card mb-4 shadow-sm border-0">
+        <div className="card-body p-2">
+          <ul className="nav nav-pills gap-2 flex-wrap mb-0 border-0">
+            {tabs.map((tab) => {
+              const isActive = memberFilterTab === tab.key;
+              return (
+                <li className="nav-item" key={tab.key}>
+                  <button
+                    className={`nav-link fw-semibold px-4 py-2 rounded-2 ${
+                      isActive ? "active bg-primary text-white shadow" : "text-dark bg-transparent"
+                    }`}
+                    style={{ transition: "all 0.2s ease-in-out", border: "none" }}
+                    type="button"
+                    onClick={() => handleFilterTabClick(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    );
+  };
+
+  const openProfileModal = async (row) => {
+    setProfileMember(row);
+    setShowProfileModal(true);
+    setProfileTab("personal");
+    setMemberProgress([]);
+    if (row.id) {
+      setMemberProgressLoading(true);
+      try {
+        const progressData = await getMemberProgressEntries(row.id);
+        setMemberProgress(progressData);
+      } catch (err) {
+        console.error("Failed to load progress entries for member", err);
+      } finally {
+        setMemberProgressLoading(false);
+      }
+    }
+  };
+
+  const handleToggleFreeze = async (member) => {
+    if (!member?.id) return;
+    try {
+      const nextFrozen = !member.raw?.isFrozen;
+      const requestPayload = {
+        email: member.email,
+        firstName: member.raw?.firstName,
+        lastName: member.raw?.lastName,
+        weight: member.raw?.weight,
+        height: member.raw?.height,
+        bloodGroup: member.raw?.bloodGroup,
+        age: member.raw?.age,
+        gender: member.raw?.gender,
+        phone: member.raw?.phone,
+        address: member.raw?.address,
+        city: member.raw?.city,
+        medicalConditions: member.raw?.medicalConditions,
+        emergencyContact: member.raw?.emergencyContact,
+        emergencyPhone: member.raw?.emergencyPhone,
+        headOfficeId: member.raw?.headOfficeId,
+        branchId: member.raw?.branchId,
+        departmentId: member.raw?.departmentId,
+        teamId: member.raw?.teamId,
+        designationId: member.raw?.designationId,
+        assignedTrainerId: member.raw?.assignedTrainerId,
+        photoPath: member.raw?.photoPath,
+        idProofPath: member.raw?.idProofPath,
+        bodyFat: member.raw?.bodyFat,
+        isFrozen: nextFrozen,
+        referredBy: member.raw?.referredBy,
+      };
+
+      await api.put(`/users/customer/${member.id}`, requestPayload, {
+        params: { updaterId: currentUserId }
+      });
+
+      setNotice(`Member ${nextFrozen ? "frozen" : "unfrozen"} successfully`);
+      await loadRows();
+      setProfileMember((prev) => ({
+        ...prev,
+        raw: {
+          ...prev.raw,
+          isFrozen: nextFrozen
+        }
+      }));
+    } catch (err) {
+      setError(extractApiErrorMessage(err, "Failed to toggle freeze status"));
+    }
+  };
 
   const renderHeader = (title, activeLabel) => (
     <div className="d-md-flex d-block align-items-center justify-content-between page-breadcrumb mb-3">
@@ -1943,7 +2391,7 @@ export default function User() {
         </button>
         <button className="btn btn-primary" onClick={openAdd} disabled={saving || !canCreateInCurrentView}>
           <IconPlus size={16} className="me-2" />
-          {viewMode === "users" ? "Add User" : "Add Employee"}
+          {viewMode === "users" ? "Add Member" : "Add Employee"}
         </button>
       </div>
     </div>
@@ -2093,7 +2541,7 @@ export default function User() {
     if (role === "USER") {
       return (
         <div className="row g-3">
-          <SectionHeader label="User / Customer Details" />
+          <SectionHeader label="Member / Customer Details" />
           <div className="col-md-6">
             <label className="form-label">Weight (kg) *</label>
             <input
@@ -2164,6 +2612,106 @@ export default function User() {
               onChange={(e) => setForm({ ...form, medicalConditions: e.target.value })}
             />
           </div>
+          <div className="col-md-6">
+            <label className="form-label">Body Fat (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              className="form-control"
+              value={form.bodyFat || ""}
+              onChange={(e) => setForm({ ...form, bodyFat: e.target.value ? Number(e.target.value) : "" })}
+              placeholder="e.g. 18.5"
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Referred By</label>
+            <input
+              type="text"
+              className="form-control"
+              value={form.referredBy || ""}
+              onChange={(e) => setForm({ ...form, referredBy: e.target.value })}
+              placeholder="Referrer name (if any)"
+            />
+          </div>
+          <SectionHeader label="Membership & Workout Plan" />
+          <div className="col-md-6">
+            <label className="form-label">Membership Plan</label>
+            <select
+              className="form-select"
+              value={form.membershipPlanId}
+              onChange={(e) => setForm({ ...form, membershipPlanId: e.target.value })}
+            >
+              <option value="">No membership plan</option>
+              {allMembershipPlans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name} (₹{plan.price})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Duration (Months override)</label>
+            <input
+              type="number"
+              min="1"
+              className="form-control"
+              value={form.membershipMonths}
+              onChange={(e) => setForm({ ...form, membershipMonths: e.target.value })}
+              placeholder="e.g. 3 (defaults to plan's duration)"
+              disabled={!form.membershipPlanId}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Access Start Time</label>
+            <input
+              type="time"
+              className="form-control"
+              value={form.membershipAccessStartTime}
+              onChange={(e) => setForm({ ...form, membershipAccessStartTime: e.target.value })}
+              disabled={!form.membershipPlanId}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Access End Time</label>
+            <input
+              type="time"
+              className="form-control"
+              value={form.membershipAccessEndTime}
+              onChange={(e) => setForm({ ...form, membershipAccessEndTime: e.target.value })}
+              disabled={!form.membershipPlanId}
+            />
+          </div>
+          <div className="col-md-6">
+            <label className="form-label">Assigned Workout Plan</label>
+            <select
+              className="form-select"
+              value={form.workoutPlanId}
+              onChange={(e) => setForm({ ...form, workoutPlanId: e.target.value })}
+            >
+              <option value="">No workout plan</option>
+              {allWorkoutPlans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-md-6 d-flex align-items-end">
+            <div className="form-check form-switch mb-2">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                id="isFrozenSwitch"
+                checked={Boolean(form.isFrozen)}
+                onChange={(e) => setForm({ ...form, isFrozen: e.target.checked })}
+              />
+              <label className="form-check-label" htmlFor="isFrozenSwitch">
+                Freeze Membership
+              </label>
+            </div>
+          </div>
         </div>
       );
     }
@@ -2179,6 +2727,35 @@ export default function User() {
     return <div className="alert alert-warning mb-0">This role is not supported by user management yet.</div>;
   };
 
+
+  const apiUploadOrigin = String(api.defaults?.baseURL || "").replace(/\/api\/?$/, "");
+  const resolveDocHref = (value) => {
+    if (!value) return "";
+    if (/^https?:\/\//i.test(value)) return value;
+    return value.startsWith("/") ? `${apiUploadOrigin}${value}` : value;
+  };
+
+  // Shared uploader for member photo/documents — stores the returned path on the
+  // given form field. Used by both the file picker and the live camera capture.
+  const uploadMemberFile = async (file, fieldName) => {
+    if (!file) return;
+    const data = new FormData();
+    data.append("file", file);
+    setUploadingField(fieldName);
+    setModalError("");
+    try {
+      const response = await api.post("/uploads/employee-documents", data, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const storedPath = response.data?.data?.path || response.data?.data?.url || response.data?.path || response.data?.url;
+      if (!storedPath) throw new Error("Upload completed, but no file path was returned.");
+      setForm((prev) => ({ ...prev, [fieldName]: storedPath }));
+    } catch (uploadError) {
+      setModalError(extractApiErrorMessage(uploadError, "File upload failed"));
+    } finally {
+      setUploadingField("");
+    }
+  };
 
   const renderEmployeePersonalFields = () => {
     const role = normalizeRole(isEdit ? selectedRow?.role : form.role);
@@ -2228,6 +2805,37 @@ export default function User() {
               value={form.medicalConditions}
               onChange={(e) => setForm({ ...form, medicalConditions: e.target.value })}
             />
+          </div>
+
+          <SectionHeader label="Photo & Documents" />
+          <PhotoCaptureField
+            label="Member Photo"
+            required
+            value={form.candidatePhotoPath}
+            href={resolveDocHref(form.candidatePhotoPath)}
+            uploading={uploadingField === "candidatePhotoPath"}
+            onFile={(file) => uploadMemberFile(file, "candidatePhotoPath")}
+          />
+          <div className="col-md-6">
+            <label className="form-label">ID Proof *</label>
+            <input
+              type="file"
+              className="form-control"
+              accept=".pdf,.jpg,.jpeg,.png,.webp"
+              disabled={uploadingField === "idProofDocumentPath"}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadMemberFile(file, "idProofDocumentPath");
+                e.target.value = "";
+              }}
+            />
+            <small className="text-muted d-block mt-1">
+              {uploadingField === "idProofDocumentPath"
+                ? "Uploading…"
+                : form.idProofDocumentPath
+                  ? <a href={resolveDocHref(form.idProofDocumentPath)} target="_blank" rel="noreferrer">View uploaded file</a>
+                  : "Upload Aadhaar / ID card (PDF or image)."}
+            </small>
           </div>
         </div>
       );
@@ -2574,7 +3182,7 @@ export default function User() {
           <select
             className="form-select"
             value={form.teamId}
-            disabled={orgLoading || !form.departmentId || (isCustomerForm && !form.designationId)}
+            disabled={orgLoading || (isCustomerForm ? !form.branchId : !form.departmentId)}
             onChange={(e) => {
               const nextTeamId = e.target.value;
               const nextTeam = teams.find((item) => String(item.id) === String(nextTeamId)) || null;
@@ -2593,6 +3201,9 @@ export default function User() {
               setForm((prev) => ({
                 ...prev,
                 teamId: nextTeamId,
+                // Members skip the Department dropdown — derive it from the team so
+                // the payload and org preview stay correct.
+                departmentId: nextTeam ? String(nextTeam.departmentId || "") : "",
                 reportsToId: resolvedTrainerId,
                 assignedTrainerId: resolvedTrainerId || prev.assignedTrainerId,
                 reportingManagerName: resolvedTrainerName,
@@ -2716,13 +3327,26 @@ export default function User() {
 
         <div className="col-md-6">
           <label className="form-label">{isEdit ? "Password" : "Password *"}</label>
-          <input
-            type="password"
-            className="form-control"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder={isEdit ? "Leave blank to keep current password" : "Set an initial password"}
-          />
+          <div className="position-relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              className="form-control"
+              style={{ paddingRight: "2.5rem" }}
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder={isEdit ? "Leave blank to keep current password" : "Set an initial password"}
+            />
+            <button
+              type="button"
+              className="btn btn-link p-0 position-absolute top-50 end-0 translate-middle-y"
+              style={{ right: "0.75rem", lineHeight: 0, color: "#000", textDecoration: "none" }}
+              onClick={() => setShowPassword((prev) => !prev)}
+              tabIndex={-1}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+            </button>
+          </div>
         </div>
 
         <div className="col-md-6">
@@ -2743,7 +3367,7 @@ export default function User() {
     showModal && (
         <WizardPopup
           open={showModal}
-          title={isEdit ? `Edit ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}` : `Add ${normalizeRole(form.role) === "USER" ? "User" : "Employee"}`}
+          title={isEdit ? `Edit ${normalizeRole(form.role) === "USER" ? "Member" : "Employee"}` : `Add ${normalizeRole(form.role) === "USER" ? "Member" : "Employee"}`}
         steps={modalSteps.map((item) => item.label)}
           step={modalStepIndex}
           onClose={closeModal}
@@ -2787,6 +3411,331 @@ export default function User() {
       </Modal>
     );
 
+  const calculateBMI = (weight, height) => {
+    if (!weight || !height) return "-";
+    const hMeters = height / 100;
+    return (weight / (hMeters * hMeters)).toFixed(1);
+  };
+
+  const renderProfileModal = () => {
+    if (!profileMember) return null;
+
+    const m = profileMember;
+    const raw = m.raw || {};
+    
+    // Filter member's transactions
+    const memberTx = allTransactions.filter((tx) => tx.member?.id === m.id);
+    
+    // Filter member's attendance
+    const memberAttendance = allAttendance.filter((att) => att.memberId === m.id);
+    
+    // Total visits
+    const totalVisits = memberAttendance.length;
+    
+    // Last visit
+    const sortedAttendance = [...memberAttendance].sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
+    const lastVisit = sortedAttendance[0];
+
+    const bmi = calculateBMI(raw.weight, raw.height);
+
+    const tabs = [
+      { key: "personal", label: "Personal" },
+      { key: "fitness", label: "Fitness" },
+      { key: "membership", label: "Membership" },
+      { key: "workout", label: "Workout" },
+      { key: "attendance", label: "Attendance" },
+    ];
+
+    return (
+      <Modal show={showProfileModal} onHide={() => setShowProfileModal(false)} size="lg" centered>
+        <Modal.Header closeButton className="bg-primary text-white">
+          <Modal.Title className="d-flex align-items-center gap-3">
+            <img
+              src={m.img || resolveDocHref(raw.photoPath) || ROLE_AVATARS.USER}
+              alt={m.name}
+              className="rounded-circle border border-white border-2"
+              width="50"
+              height="50"
+              style={{ objectFit: "cover" }}
+            />
+            <div>
+              <h5 className="mb-0 text-white">{m.name || "Member Profile"}</h5>
+              <small className="text-white-50">{formatMemberCode(m.id)} • Member Since {new Date(raw.registrationDate || Date.now()).toLocaleDateString()}</small>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="p-0">
+          <div className="bg-light border-bottom p-2">
+            <ul className="nav nav-pills nav-fill gap-1">
+              {tabs.map((t) => (
+                <li className="nav-item" key={t.key}>
+                  <button
+                    className={`nav-link py-2 fw-semibold border-0 ${profileTab === t.key ? "active bg-primary text-white" : "text-dark bg-transparent"}`}
+                    onClick={() => setProfileTab(t.key)}
+                    type="button"
+                  >
+                    {t.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="p-4" style={{ minHeight: "350px", maxHeight: "60vh", overflowY: "auto" }}>
+            {profileTab === "personal" && (
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <span className="text-muted small d-block">Full Name</span>
+                  <strong className="fs-6">{m.name || "-"}</strong>
+                </div>
+                <div className="col-md-6">
+                  <span className="text-muted small d-block">Mobile</span>
+                  <strong className="fs-6">{formatPhoneWithCode(m.phone, m.countryCode)}</strong>
+                </div>
+                <div className="col-md-6">
+                  <span className="text-muted small d-block">Email Address</span>
+                  <strong className="fs-6">{m.email || "-"}</strong>
+                </div>
+                <div className="col-md-6">
+                  <span className="text-muted small d-block">Emergency Contact</span>
+                  <strong className="fs-6">
+                    {raw.emergencyContact || "-"} ({raw.emergencyPhone || "-"})
+                  </strong>
+                </div>
+                <div className="col-md-12">
+                  <span className="text-muted small d-block">Residential Address</span>
+                  <p className="fs-6 mb-0">{raw.address ? `${raw.address}, ${raw.city || ""}` : "-"}</p>
+                </div>
+                {raw.medicalConditions && (
+                  <div className="col-md-12">
+                    <span className="text-muted small d-block text-danger fw-semibold">Medical Conditions</span>
+                    <div className="alert alert-danger py-2 px-3 mt-1 mb-0">
+                      {raw.medicalConditions}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {profileTab === "fitness" && (
+              <div className="row g-4 text-center">
+                <div className="col-sm-4">
+                  <div className="p-3 bg-light rounded-3 border">
+                    <span className="text-muted small d-block mb-1">Weight</span>
+                    <h3 className="mb-0 text-primary">{raw.weight || "-"} <small className="fs-6 text-muted">kg</small></h3>
+                  </div>
+                </div>
+                <div className="col-sm-4">
+                  <div className="p-3 bg-light rounded-3 border">
+                    <span className="text-muted small d-block mb-1">Height</span>
+                    <h3 className="mb-0 text-success">{raw.height || "-"} <small className="fs-6 text-muted">cm</small></h3>
+                  </div>
+                </div>
+                <div className="col-sm-4">
+                  <div className="p-3 bg-light rounded-3 border">
+                    <span className="text-muted small d-block mb-1">Calculated BMI</span>
+                    <h3 className="mb-0 text-info">{bmi}</h3>
+                  </div>
+                </div>
+                <div className="col-sm-4">
+                  <div className="p-3 bg-light rounded-3 border">
+                    <span className="text-muted small d-block mb-1">Body Fat</span>
+                    <h3 className="mb-0 text-warning">{raw.bodyFat || "-"} <small className="fs-6 text-muted">%</small></h3>
+                  </div>
+                </div>
+                <div className="col-sm-4">
+                  <div className="p-3 bg-light rounded-3 border">
+                    <span className="text-muted small d-block mb-1">Blood Group</span>
+                    <h3 className="mb-0 text-danger">{raw.bloodGroup || "-"}</h3>
+                  </div>
+                </div>
+                <div className="col-sm-4">
+                  <div className="p-3 bg-light rounded-3 border">
+                    <span className="text-muted small d-block mb-1">Age / Gender</span>
+                    <h3 className="mb-0 text-dark">{raw.age || "-"} yrs <small className="fs-6 text-muted">({raw.gender || "-"})</small></h3>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {profileTab === "membership" && (
+              <div>
+                <div className="row g-3 mb-4 p-3 bg-light rounded-3 border align-items-center">
+                  <div className="col-md-5">
+                    <span className="text-muted small d-block">Current Plan</span>
+                    <h4 className="text-primary mb-0">{raw.membershipPlan || "BASIC"}</h4>
+                  </div>
+                  <div className="col-md-4">
+                    <span className="text-muted small d-block">Expiry Date</span>
+                    <strong className="text-dark">
+                      {raw.membershipExpiry ? new Date(raw.membershipExpiry).toLocaleDateString() : "No active plan"}
+                    </strong>
+                  </div>
+                  <div className="col-md-3 text-md-end">
+                    <div className="form-check form-switch d-inline-block">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="profileFreezeSwitch"
+                        checked={Boolean(raw.isFrozen)}
+                        onChange={() => handleToggleFreeze(m)}
+                      />
+                      <label className="form-check-label fw-semibold text-danger" style={{ cursor: "pointer" }} htmlFor="profileFreezeSwitch">
+                        {raw.isFrozen ? "Frozen" : "Freeze Plan"}
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <h6 className="mb-3 text-muted">Payment & Transactions History</h6>
+                {memberTx.length === 0 ? (
+                  <div className="alert alert-light text-center">No payment transactions found.</div>
+                ) : (
+                  <div className="table-responsive border rounded">
+                    <table className="table table-sm table-striped mb-0">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Plan</th>
+                          <th>Amount</th>
+                          <th>Method</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {memberTx.map((tx) => (
+                          <tr key={tx.id}>
+                            <td>{new Date(tx.transactionDate).toLocaleDateString()}</td>
+                            <td>{tx.plan?.name || tx.planCode || "Membership Plan"}</td>
+                            <td>₹{tx.amount}</td>
+                            <td><span className="badge bg-light text-dark">{tx.paymentMethod}</span></td>
+                            <td>
+                              <span className={`badge ${tx.status === "SUCCESS" ? "bg-success" : "bg-danger"}`}>
+                                {tx.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {profileTab === "workout" && (
+              <div>
+                <div className="p-3 bg-light rounded-3 border mb-4">
+                  <span className="text-muted small d-block">Assigned Workout Plan</span>
+                  <h5 className="text-success mb-0">{m.assignedWorkoutPlanName || "No workout plan assigned"}</h5>
+                </div>
+
+                <h6 className="mb-3 text-muted">Progress Entry Logs</h6>
+                {memberProgressLoading ? (
+                  <div className="text-center py-3">Loading progress entries...</div>
+                ) : memberProgress.length === 0 ? (
+                  <div className="alert alert-light text-center">No progress entries logged yet.</div>
+                ) : (
+                  <div className="table-responsive border rounded">
+                    <table className="table table-sm table-striped mb-0">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Weight</th>
+                          <th>Heart Rate</th>
+                          <th>Workout Min</th>
+                          <th>Calories</th>
+                          <th>Steps</th>
+                          <th>Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {memberProgress.map((p) => (
+                          <tr key={p.id}>
+                            <td>{new Date(p.entryDate).toLocaleDateString()}</td>
+                            <td>{p.weightKg ? `${p.weightKg} kg` : "-"}</td>
+                            <td>{p.heartRateBpm ? `${p.heartRateBpm} bpm` : "-"}</td>
+                            <td>{p.workoutMinutes ? `${p.workoutMinutes} m` : "-"}</td>
+                            <td>{p.caloriesBurned ? `${p.caloriesBurned} kcal` : "-"}</td>
+                            <td>{p.steps || "-"}</td>
+                            <td className="text-truncate" style={{ maxWidth: "150px" }} title={p.notes}>
+                              {p.notes || "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {profileTab === "attendance" && (
+              <div>
+                <div className="row g-3 mb-4">
+                  <div className="col-sm-6">
+                    <div className="p-3 bg-light rounded-3 border text-center">
+                      <span className="text-muted small d-block mb-1">Total Visits</span>
+                      <h3 className="mb-0 text-primary fw-bold">{totalVisits}</h3>
+                    </div>
+                  </div>
+                  <div className="col-sm-6">
+                    <div className="p-3 bg-light rounded-3 border text-center">
+                      <span className="text-muted small d-block mb-1">Last Visit Scan</span>
+                      <h6 className="mb-0 text-success fw-bold">
+                        {lastVisit ? new Date(lastVisit.checkInTime).toLocaleString() : "Never visited"}
+                      </h6>
+                    </div>
+                  </div>
+                </div>
+
+                <h6 className="mb-3 text-muted">Recent Visit History</h6>
+                {memberAttendance.length === 0 ? (
+                  <div className="alert alert-light text-center">No attendance scans found.</div>
+                ) : (
+                  <div className="table-responsive border rounded">
+                    <table className="table table-sm table-striped mb-0">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Check-in</th>
+                          <th>Check-out</th>
+                          <th>Method</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedAttendance.slice(0, 15).map((att) => (
+                          <tr key={att.id}>
+                            <td>{new Date(att.attendanceDate).toLocaleDateString()}</td>
+                            <td>{new Date(att.checkInTime).toLocaleTimeString()}</td>
+                            <td>{att.checkOutTime ? new Date(att.checkOutTime).toLocaleTimeString() : "-"}</td>
+                            <td><span className="badge bg-light text-dark">{att.method}</span></td>
+                            <td>
+                              <span className={`badge ${att.status === "CHECKED_OUT" ? "bg-secondary" : "bg-success"}`}>
+                                {att.status === "CHECKED_OUT" ? "Checked Out" : "Inside"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowProfileModal(false)} type="button">
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    );
+  };
+
   const renderDietAssignModal = () => (
     <Modal show={showDietAssignModal} onHide={closeDietAssignModal} centered>
       <Modal.Header closeButton>
@@ -2797,9 +3746,15 @@ export default function User() {
       </Modal.Header>
       <Modal.Body>
         {dietAssignError && <div className="alert alert-danger">{dietAssignError}</div>}
-        <p className="text-muted mb-3">
-          Assign a diet plan to <strong>{dietAssignTarget?.name || "this user"}</strong>.
+        <p className="text-muted mb-2">
+          Assign a diet plan to <strong>{dietAssignTarget?.name || "this member"}</strong>.
         </p>
+        <div className="alert alert-light py-2 mb-3">
+          <span className="text-muted">Current diet plan: </span>
+          {dietAssignTarget?.assignedDietPlanName
+            ? <strong>{dietAssignTarget.assignedDietPlanName}</strong>
+            : <span className="fst-italic text-muted">None assigned yet</span>}
+        </div>
         <label className="form-label">Diet Plan</label>
         <select
           className="form-select"
@@ -2845,9 +3800,15 @@ export default function User() {
       </Modal.Header>
       <Modal.Body>
         {workoutAssignError && <div className="alert alert-danger">{workoutAssignError}</div>}
-        <p className="text-muted mb-3">
-          Assign a workout plan to <strong>{workoutAssignTarget?.name || "this user"}</strong>.
+        <p className="text-muted mb-2">
+          Assign a workout plan to <strong>{workoutAssignTarget?.name || "this member"}</strong>.
         </p>
+        <div className="alert alert-light py-2 mb-3">
+          <span className="text-muted">Current workout plan: </span>
+          {workoutAssignTarget?.assignedWorkoutPlanName
+            ? <strong>{workoutAssignTarget.assignedWorkoutPlanName}</strong>
+            : <span className="fst-italic text-muted">None assigned yet</span>}
+        </div>
         <label className="form-label">Workout Plan</label>
         <select
           className="form-select"
@@ -2896,7 +3857,7 @@ export default function User() {
       <div className="card flex-fill">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-start mb-3">
-            <span className={`badge ${getRoleBadgeClass(row.role)}`}>{row.role}</span>
+            <span className={`badge ${getRoleBadgeClass(row.role)}`}>{roleDisplay(row.role)}</span>
             <div className="d-flex gap-1">
                 {canAssignWorkoutPlan && normalizeRole(row.role) === "USER" && (
                   <button
@@ -2918,6 +3879,16 @@ export default function User() {
                   <IconChefHat size={14} />
                 </button>
               )}
+              {normalizeRole(row.role) === "USER" && (
+                <button
+                  className="btn btn-sm btn-outline-info"
+                  onClick={() => openProfileModal(row)}
+                  type="button"
+                  title="View Member Profile"
+                >
+                  <IconEye size={14} />
+                </button>
+              )}
               <button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(row)} type="button">
                 <IconEdit size={14} />
               </button>
@@ -2936,17 +3907,41 @@ export default function User() {
               height="42"
             />
             <div>
-              <h6 className="mb-0">{row.name || "-"}</h6>
-              <small className="text-muted">{row.department || "-"}</small>
+              <h6 className="mb-0">
+                {normalizeRole(row.role) === "USER" ? (
+                  <button
+                    type="button"
+                    className="btn btn-link p-0 fw-semibold text-decoration-none text-start text-primary"
+                    onClick={() => openProfileModal(row)}
+                  >
+                    {row.name || "-"}
+                  </button>
+                ) : (
+                  row.name || "-"
+                )}
+              </h6>
+              <small className="text-muted">{normalizeRole(row.role) === "USER" ? (row.assignedTrainerName ? `Trainer: ${row.assignedTrainerName}` : "-") : (row.department || "-")}</small>
             </div>
           </div>
 
           <p className="mb-1">Email: {row.email || "-"}</p>
           <p className="mb-1">Phone: {formatPhoneWithCode(row.phone, row.countryCode)}</p>
-          <p className="mb-1">Org: {buildOrgLabel(row.raw, scopeHelpers)}</p>
-          <span className={`badge ${row.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>
-            {row.status === "ACTIVE" ? "Active" : "Inactive"}
-          </span>
+          <p className="mb-1">Org: {buildOrgLabel(row.raw, scopeHelpers, row.role)}</p>
+          <div className="form-check form-switch d-inline-flex align-items-center gap-2 m-0 ps-0">
+            <input
+              className="form-check-input m-0"
+              style={{ cursor: togglingId === row.id ? "wait" : "pointer", marginLeft: 0 }}
+              type="checkbox"
+              role="switch"
+              title={row.status === "ACTIVE" ? "Click to deactivate" : "Click to activate"}
+              checked={row.status === "ACTIVE"}
+              disabled={togglingId === row.id}
+              onChange={() => handleToggleStatus(row)}
+            />
+            <span className={`badge ${row.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>
+              {row.status === "ACTIVE" ? "Active" : "Inactive"}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -2958,16 +3953,17 @@ export default function User() {
         {notice && <div className="alert alert-success">{notice}</div>}
         {error && <div className="alert alert-danger">{error}</div>}
 
-        {renderHeader("User Management", "Users Grid")}
+        {renderHeader(isMembersPage ? "Members Management" : "User Management", isMembersPage ? "Members Grid" : "Users Grid")}
         {renderDisplaySwitch()}
         {renderStats()}
+        {renderMemberFilterTabs()}
 
         <div className="row">
           {loading ? (
             <div className="text-center py-4">Loading...</div>
           ) : displayedRows.length === 0 ? (
             <div className="text-center py-4">
-              No {viewMode === "users" ? "users" : "employees"} found for your role.
+              No {viewMode === "users" ? "members" : "employees"} found for your role.
             </div>
           ) : (
             displayedRows.map((row) => renderGridCard(row))
@@ -2978,6 +3974,7 @@ export default function User() {
           {renderDietAssignModal()}
           {renderWorkoutAssignModal()}
           {renderDeleteModal()}
+          {renderProfileModal()}
       </div>
     );
   }
@@ -2988,9 +3985,10 @@ export default function User() {
         {notice && <div className="alert alert-success">{notice}</div>}
         {error && <div className="alert alert-danger">{error}</div>}
 
-        {renderHeader("User Management", "Users")}
+        {renderHeader(isMembersPage ? "Members Management" : "User Management", isMembersPage ? "Members" : "Users")}
         {renderDisplaySwitch()}
         {renderStats()}
+        {renderMemberFilterTabs()}
 
         <div className="card mb-3">
           <div className="card-body d-flex flex-wrap align-items-center gap-3 justify-content-between">
@@ -3013,7 +4011,7 @@ export default function User() {
 
         <div className="card">
           <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 className="mb-0">{viewMode === "users" ? "Users List" : "Employee List"}</h5>
+            <h5 className="mb-0">{viewMode === "users" ? "Members List" : "Employee List"}</h5>
             <div className="d-flex flex-wrap gap-2 align-items-center">
               <span className="badge bg-info">{currentRole || "UNKNOWN"}</span>
               <span className="badge bg-light text-dark">
@@ -3028,11 +4026,12 @@ export default function User() {
               <table className="table table-striped table-hover mb-0">
                 <thead className="thead-light">
                   <tr>
+                    <th>ID</th>
                     <th>Role</th>
                     <th>Name</th>
                     <th>Email</th>
                     <th>Phone</th>
-                    <th>Department / Title</th>
+                    <th>{isMembersPage ? "Trainer" : "Department / Title"}</th>
                     <th>Org Scope</th>
                     <th>Status</th>
                     <th>Action</th>
@@ -3041,21 +4040,22 @@ export default function User() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-4">
+                      <td colSpan={9} className="text-center py-4">
                         Loading...
                       </td>
                     </tr>
                   ) : displayedRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-4">
-                        No {viewMode === "users" ? "users" : "employees"} found for your role.
+                      <td colSpan={9} className="text-center py-4">
+                        No {viewMode === "users" ? "members" : "employees"} found for your role.
                       </td>
                     </tr>
                   ) : (
                     displayedRows.map((row) => (
                       <tr key={`${row.role}-${row.id}`}>
+                        <td className="fw-semibold text-muted text-nowrap">{formatMemberCode(row.id)}</td>
                         <td>
-                          <span className={`badge ${getRoleBadgeClass(row.role)}`}>{row.role}</span>
+                          <span className={`badge ${getRoleBadgeClass(row.role)}`}>{roleDisplay(row.role)}</span>
                         </td>
                         <td>
                           <div className="d-flex align-items-center">
@@ -3066,17 +4066,39 @@ export default function User() {
                               width="34"
                               height="34"
                             />
-                            <span className="fw-semibold">{row.name || "-"}</span>
+                            {normalizeRole(row.role) === "USER" ? (
+                              <button
+                                type="button"
+                                className="btn btn-link p-0 fw-semibold text-decoration-none text-start text-primary"
+                                onClick={() => openProfileModal(row)}
+                              >
+                                {row.name || "-"}
+                              </button>
+                            ) : (
+                              <span className="fw-semibold">{row.name || "-"}</span>
+                            )}
                           </div>
                         </td>
                         <td>{row.email || "-"}</td>
                         <td>{formatPhoneWithCode(row.phone, row.countryCode)}</td>
-                        <td>{row.department || "-"}</td>
-                        <td>{buildOrgLabel(row.raw, scopeHelpers)}</td>
+                        <td>{normalizeRole(row.role) === "USER" ? (row.assignedTrainerName || "-") : (row.department || "-")}</td>
+                        <td>{buildOrgLabel(row.raw, scopeHelpers, row.role)}</td>
                         <td>
-                          <span className={`badge ${row.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>
-                            {row.status === "ACTIVE" ? "Active" : "Inactive"}
-                          </span>
+                          <div className="form-check form-switch d-inline-flex align-items-center gap-2 m-0 ps-0">
+                            <input
+                              className="form-check-input m-0"
+                              style={{ cursor: togglingId === row.id ? "wait" : "pointer", marginLeft: 0 }}
+                              type="checkbox"
+                              role="switch"
+                              title={row.status === "ACTIVE" ? "Click to deactivate" : "Click to activate"}
+                              checked={row.status === "ACTIVE"}
+                              disabled={togglingId === row.id}
+                              onChange={() => handleToggleStatus(row)}
+                            />
+                            <span className={`badge ${row.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>
+                              {row.status === "ACTIVE" ? "Active" : "Inactive"}
+                            </span>
+                          </div>
                         </td>
                         <td>
                             {canAssignWorkoutPlan && normalizeRole(row.role) === "USER" && (
@@ -3097,6 +4119,16 @@ export default function User() {
                               >
                               <IconChefHat size={14} className="me-1" />
                               Assign Diet Plan
+                            </button>
+                          )}
+                          {normalizeRole(row.role) === "USER" && (
+                            <button
+                              className="btn btn-sm btn-outline-info me-1"
+                              onClick={() => openProfileModal(row)}
+                              type="button"
+                              title="View Member Profile"
+                            >
+                              <IconEye size={14} />
                             </button>
                           )}
                           <button
@@ -3127,6 +4159,7 @@ export default function User() {
         {renderDietAssignModal()}
         {renderWorkoutAssignModal()}
         {renderDeleteModal()}
+        {renderProfileModal()}
       </div>
     </div>
   );

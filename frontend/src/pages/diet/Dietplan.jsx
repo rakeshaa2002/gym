@@ -85,7 +85,10 @@ function normalizeDietPlan(plan) {
 //  Main Component
 // ----------------------------------------------
 export default function DietPlanPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  // Members don't manage the catalog — they only see the plan an admin/trainer
+  // assigned to them. Staff see and manage the full Diet Menu catalog.
+  const isMember = String(user?.role || "").toUpperCase() === "USER";
 
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -120,12 +123,27 @@ export default function DietPlanPage() {
   const loadDietPlans = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/diet-plans");
-      const data = res.data?.data || res.data || [];
-      setPlans(Array.isArray(data) ? data.map(normalizeDietPlan) : []);
+      if (isMember) {
+        // A member only sees the single plan assigned to them (or nothing).
+        const res = await api.get("/users/me/diet-plan");
+        const data = res.data?.data ?? res.data ?? null;
+        const assigned = data && data.id ? [normalizeDietPlan(data)] : [];
+        setPlans(assigned);
+      } else {
+        const res = await api.get("/diet-plans");
+        const data = res.data?.data || res.data || [];
+        setPlans(Array.isArray(data) ? data.map(normalizeDietPlan) : []);
+      }
       setError("");
     } catch (err) {
-      setError(extractApiErrorMessage(err, "Failed to load diet menu"));
+      // No plan assigned yet comes back as an error/empty for members — show the
+      // empty state rather than a scary error.
+      if (isMember) {
+        setPlans([]);
+        setError("");
+      } else {
+        setError(extractApiErrorMessage(err, "Failed to load diet menu"));
+      }
     } finally {
       setLoading(false);
     }
@@ -156,7 +174,8 @@ export default function DietPlanPage() {
 
   useEffect(() => {
     loadDietPlans();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMember]);
 
   useEffect(() => {
     if (!notice) return;
@@ -557,8 +576,12 @@ export default function DietPlanPage() {
               </div>
               <div className="d-flex gap-2 mt-2">
                 <Link className="btn btn-sm btn-outline-secondary" to={`/diet-detail/${plan.id}`}>View</Link>
-                <button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(plan)}><IconEdit size={14} /></button>
-                <button className="btn btn-sm btn-outline-danger" onClick={() => confirmDelete(plan.id)}><IconTrash size={14} /></button>
+                {!isMember && (
+                  <>
+                    <button className="btn btn-sm btn-outline-primary" onClick={() => openEdit(plan)}><IconEdit size={14} /></button>
+                    <button className="btn btn-sm btn-outline-danger" onClick={() => confirmDelete(plan.id)}><IconTrash size={14} /></button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -602,8 +625,12 @@ export default function DietPlanPage() {
               <td><span className={`badge ${plan.status === "ACTIVE" ? "bg-success" : "bg-danger"}`}>{plan.status}</span></td>
               <td className="text-end">
                 <Link className="btn btn-sm btn-outline-secondary me-1" to={`/diet-detail/${plan.id}`}>View</Link>
-                <button className="btn btn-sm btn-outline-primary me-1" onClick={() => openEdit(plan)}><IconEdit size={14} /></button>
-                <button className="btn btn-sm btn-outline-danger" onClick={() => confirmDelete(plan.id)}><IconTrash size={14} /></button>
+                {!isMember && (
+                  <>
+                    <button className="btn btn-sm btn-outline-primary me-1" onClick={() => openEdit(plan)}><IconEdit size={14} /></button>
+                    <button className="btn btn-sm btn-outline-danger" onClick={() => confirmDelete(plan.id)}><IconTrash size={14} /></button>
+                  </>
+                )}
               </td>
             </tr>
           ))}
@@ -617,14 +644,20 @@ export default function DietPlanPage() {
       <div className="mx-auto mb-3 d-flex align-items-center justify-content-center bg-light rounded-circle" style={{ width: 64, height: 64 }}>
         <IconChefHat size={32} />
       </div>
-      <h5 className="mb-2">No menu items yet</h5>
-      <p className="text-muted mb-3">Add breakfast, lunch, dinner, or snack items to build the Diet Menu table.</p>
-      <div>
-        <button className="btn btn-primary" onClick={openAdd}>
-          <IconPlus size={16} className="me-2" />
-          Add Menu Item
-        </button>
-      </div>
+      <h5 className="mb-2">{isMember ? "No diet plan assigned yet" : "No menu items yet"}</h5>
+      <p className="text-muted mb-3">
+        {isMember
+          ? "Your trainer or admin hasn't assigned a diet plan to you yet. It will appear here once assigned."
+          : "Add breakfast, lunch, dinner, or snack items to build the Diet Menu table."}
+      </p>
+      {!isMember && (
+        <div>
+          <button className="btn btn-primary" onClick={openAdd}>
+            <IconPlus size={16} className="me-2" />
+            Add Menu Item
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -642,9 +675,11 @@ export default function DietPlanPage() {
             <h2>DIET MENU</h2>
             <nav><ol className="breadcrumb"><li className="breadcrumb-item"><Link to="/"><IconHome size={16} /></Link></li><li className="breadcrumb-item active">Diet Menu</li></ol></nav>
           </div>
-          <div className="d-flex gap-2">
-            <button className="btn btn-primary" onClick={openAdd}><IconPlus size={16} className="me-2" />Add Menu Item</button>
-          </div>
+          {!isMember && (
+            <div className="d-flex gap-2">
+              <button className="btn btn-primary" onClick={openAdd}><IconPlus size={16} className="me-2" />Add Menu Item</button>
+            </div>
+          )}
         </div>
 
         {/* View toggle */}

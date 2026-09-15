@@ -126,7 +126,7 @@ export default function Signup() {
             if (error.response?.status === 400) {
                 setError(error.response?.data?.message || "Invalid input. Please check your details.");
             } else if (error.code === 'ERR_NETWORK') {
-                setError("Cannot connect to server. Make sure backend is running on localhost:8081");
+                setError("Cannot connect to server. Make sure backend is running on localhost:8082");
             } else {
                 setError(error.response?.data?.message || "An error occurred during registration. Please try again.");
             }

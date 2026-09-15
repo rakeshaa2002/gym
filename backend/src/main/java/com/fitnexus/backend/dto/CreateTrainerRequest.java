@@ -24,6 +24,9 @@ public class CreateTrainerRequest {
     )
     private String password;
 
+    /** On update: when true the password field is ignored and the current one kept. */
+    private Boolean keepPassword;
+
     @NotBlank(message = "Name cannot be blank")
     @Size(min = 2, max = 50, message = "Name must be between 2 and 50 characters")
     @Pattern(regexp = "^[a-zA-Z\\s'-]+$", message = "Name should only contain letters, spaces, hyphens, and apostrophes")

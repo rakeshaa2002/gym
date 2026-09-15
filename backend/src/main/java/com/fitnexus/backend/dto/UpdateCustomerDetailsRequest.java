@@ -13,6 +13,9 @@ public class UpdateCustomerDetailsRequest {
     private String firstName;
     private String lastName;
 
+    /** Optional new password; ignored when null/blank (keeps the current one). */
+    private String password;
+
     @NotNull(message = "Weight cannot be null")
     @DecimalMin(value = "20.0", message = "Weight must be at least 20 kg")
     @DecimalMax(value = "300.0", message = "Weight cannot exceed 300 kg")
@@ -65,4 +68,10 @@ public class UpdateCustomerDetailsRequest {
     private Long teamId;
     private Long designationId;
     private Long assignedTrainerId;
+
+    private String photoPath;
+    private String idProofPath;
+    private Double bodyFat;
+    private Boolean isFrozen;
+    private String referredBy;
 }

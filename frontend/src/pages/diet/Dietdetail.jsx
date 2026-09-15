@@ -63,6 +63,14 @@ export default function Dietdetail() {
   const [emptyMessage, setEmptyMessage] = useState("");
 
   useEffect(() => {
+    // Staff have no "own" diet plan — opening this page without a selected item is
+    // meaningless, so send them to the Diet Menu to pick one. Members fall through
+    // and load their assigned plan below.
+    if (!id && currentRole && currentRole !== "USER") {
+      navigate("/dietplan", { replace: true });
+      return;
+    }
+
     const loadPlan = async () => {
       setLoading(true);
       setError("");
@@ -102,7 +110,7 @@ export default function Dietdetail() {
     };
 
     loadPlan();
-  }, [id, currentRole]);
+  }, [id, currentRole, navigate]);
 
   const imageList = useMemo(() => {
     if (!plan) return [];
